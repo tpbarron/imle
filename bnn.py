@@ -260,6 +260,8 @@ class BNN(nn.Module):
         for _ in range(self.n_samples):
             # Make prediction.
             prediction = self.forward(inputs)
+            # print ("inputs: ", inputs.size())
+            # print ("targets: ", targets.size())
             # Calculate model likelihood log(P(D|w)).
             _log_p_D_given_w.append(self._log_prob_normal(targets, prediction, self.likelihood_sd))
 
@@ -273,6 +275,8 @@ class BNN(nn.Module):
 
     def train(self, inputs, targets):
         self.opt.zero_grad()
+        # print ("inputs: ", inputs.shape)
+        # print ("targets: ", targets.shape)
         L = self.loss(Variable(torch.from_numpy(inputs).float()), Variable(torch.from_numpy(targets).float()))
         L.backward()
         self.opt.step()

@@ -6,6 +6,10 @@ import torch.nn.functional as F
 torch.set_default_tensor_type('torch.FloatTensor')
 
 
+################################################################################
+# Policies
+################################################################################
+
 class GaussianMLPPolicy(nn.Module):
 
     def __init__(self, num_inputs, num_outputs):
@@ -36,29 +40,12 @@ class GaussianMLPPolicy(nn.Module):
         return action_mean, action_log_std, action_std
 
 
-class MLPValue(nn.Module):
-
-    def __init__(self, num_inputs):
-        super(MLPValue, self).__init__()
-        self.affine1 = nn.Linear(num_inputs, 64)
-        self.affine2 = nn.Linear(64, 64)
-        self.value_head = nn.Linear(64, 1)
-        self.value_head.weight.data.mul_(0.1)
-        self.value_head.bias.data.mul_(0.0)
-
-    def forward(self, x):
-        x = F.tanh(self.affine1(x))
-        x = F.tanh(self.affine2(x))
-
-        state_values = self.value_head(x)
-        return state_values
-
-class MLPDiscretePolicy(nn.Module):
+class DiscreteMLPPolicy(nn.Module):
 
     def __init__(self, num_inputs, num_actions):
-        super(MLPDiscretePolicy, self).__init__()
+        super(DiscreteMLPPolicy, self).__init__()
         self.affine1 = nn.Linear(num_inputs, 64)
-        self.affine2 = nn.Linear(64, 64)
+        # self.affine2 = nn.Linear(64, 64)
         self.action_head = nn.Linear(64, num_actions)
         self.action_head.weight.data.mul_(0.1)
         self.action_head.bias.data.mul_(0.0)
@@ -71,15 +58,42 @@ class MLPDiscretePolicy(nn.Module):
 
     def forward(self, x):
         x = F.tanh(self.affine1(x))
-        x = F.tanh(self.affine2(x))
+        # x = F.tanh(self.affine2(x))
         action_logits = self.action_head(x)
         return action_logits
 
 
-class MLPDiscreteActorCritic(nn.Module):
+################################################################################
+# Value functions
+################################################################################
+
+class MLPValue(nn.Module):
+
+    def __init__(self, num_inputs):
+        super(MLPValue, self).__init__()
+        self.affine1 = nn.Linear(num_inputs, 64)
+        # self.affine2 = nn.Linear(64, 64)
+        self.value_head = nn.Linear(64, 1)
+        self.value_head.weight.data.mul_(0.1)
+        self.value_head.bias.data.mul_(0.0)
+
+    def encode(self, x):
+        return F.tanh(self.affine1(x))
+
+    def forward(self, x):
+        x = F.tanh(self.affine1(x))
+        # x = F.tanh(self.affine2(x))
+        state_values = self.value_head(x)
+        return state_values
+
+################################################################################
+# Shared parameter Actor Critic models
+################################################################################
+
+class DiscreteMLPActorCritic(nn.Module):
 
     def __init__(self, num_inputs, num_actions):
-        super(MLPDiscreteActorCritic, self).__init__()
+        super(DiscreteMLPActorCritic, self).__init__()
         self.affine1 = nn.Linear(num_inputs, 64)
         self.affine2 = nn.Linear(64, 64)
 
@@ -95,27 +109,3 @@ class MLPDiscreteActorCritic(nn.Module):
         actions = self.action_head(x)
 
         return actions, value
-
-class MLPContinuousActorCritic(nn.Module):
-
-    def __init__(self, num_inputs, num_outputs):
-        super(MLPContinuousActorCritic, self).__init__()
-        self.affine1 = nn.Linear(num_inputs, 64)
-        self.affine2 = nn.Linear(64, 64)
-
-        self.value_head = nn.Linear(64, 1)
-        self.value_head.weight.data.mul_(0.1)
-        self.value_head.bias.data.mul_(0.0)
-
-        self.action_mean = nn.Linear(64, num_outputs)
-        self.action_mean.weight.data.mul_(0.1)
-        self.action_mean.bias.data.mul_(0.0)
-
-        self.action_log_std = nn.Parameter(torch.zeros(1, num_outputs))
-
-    def forward(self, x):
-        x = F.tanh(self.affine1(x))
-        x = F.tanh(self.affine2(x))
-
-        state_values = self.value_head(x)
-        return state_values

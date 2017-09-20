@@ -18,36 +18,16 @@ class AdvantageActorCritic(object):
         self.optimizer_policy = optim.Adam(self.policy.parameters(), lr=0.001)
         self.optimizer_value = optim.Adam(self.value_fn.parameters(), lr=0.01)
 
-    def update(self, batch):
+    def update(self, values, log_probs, rewards, entropies):
         """
         Do policy update for algorithm
         """
-        print ("Update AAC")
-        observations = batch['observations']
-        actions = batch['actions']
-        rewards = batch['rewards']
-        bonuses = batch['bonuses']
-        terminals = batch['terminals']
-        next_observations = batch['next_observations']
-
-        obs = Variable(torch.from_numpy(observations).float())
-        # state value estimates
-        values = self.value_fn(obs)
-        R = torch.zeros(1, 1)
-        values = torch.cat((values, Variable(R)))
-
-        probs = self.policy(obs)
-        log_probs = F.log_softmax(probs)
-        # print ("Actions: ", actions.shape, actions[0].shape)
-
         policy_loss = 0
         value_loss = 0
-
-        R = Variable(R)
+        R = Variable(torch.zeros(1, 1))
         gae = torch.zeros(1, 1)
-
         for i in reversed(range(len(rewards))):
-            R = self.gamma * R + float(rewards[i]) * (1 - terminals[i])
+            R = self.gamma * R + rewards[i]
             advantage = R - values[i]
             value_loss = value_loss + 0.5 * advantage.pow(2)
 
@@ -56,16 +36,15 @@ class AdvantageActorCritic(object):
                 values[i + 1].data - values[i].data
             gae = gae * self.gamma * self.tau + delta_t
 
-            policy_loss = policy_loss - log_probs[i][actions[i][0]] * Variable(gae)
+            policy_loss = policy_loss - \
+                log_probs[i] * Variable(gae) - 0.01 * entropies[i]
 
         self.optimizer_policy.zero_grad()
         self.optimizer_value.zero_grad()
 
-        # print ("pol loss: ", policy_loss)
-        # print ("val loss: ", value_loss)
         policy_loss.backward()
         value_loss.backward()
-
+        # (policy_loss + 0.5 * value_loss).backward()
         torch.nn.utils.clip_grad_norm(self.policy.parameters(), 40)
 
         self.optimizer_policy.step()
