@@ -271,6 +271,8 @@ class BNN(nn.Module):
         kl = self.log_p_w_q_w_kl()
 
         # Calculate loss function.
+        # I don't know this stuff well enough to know why kl is over batches
+        # .                          approx E(log p(D| w))
         return kl / self.n_batches - log_p_D_given_w / self.n_samples
 
     def train(self, inputs, targets):
