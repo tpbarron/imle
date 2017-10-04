@@ -129,7 +129,7 @@ class BayesianLayer(nn.Module):
         q_mean = q_mean.expand_as(p_mean)
         q_std = q_std.expand_as(p_std)
         numerator = square(p_mean - q_mean) + \
-            square(p_std) - square(q_std) #.expand_as(p_std)
+            square(p_std) - square(q_std)
         denominator = 2. * square(q_std) + eps
         return torch.sum(numerator / denominator + torch.log(q_std) - torch.log(p_std))
 
@@ -146,15 +146,20 @@ class BayesianLayer(nn.Module):
         return kl_div
 
     def kl_div_old_new(self):
+        # print ("KL div old new", self.mu_old, self.rho_old, self.mu, self.rho)
         kl_div = self.kl_div_p_q(
             Variable(self.mu_old),
             Variable(self.log_to_std(self.rho_old)),
             self.mu,
             self.log_to_std(self.rho))
+        # if kl_div.data[0] < 0:
+        #     print ("Dkl1: ", kl_div)
         kl_div += self.kl_div_p_q(Variable(self.b_mu_old),
                                   Variable(self.log_to_std(self.b_rho_old)),
                                   self.b_mu,
                                   self.log_to_std(self.b_rho))
+        # if kl_div.data[0] < 0:
+        #     print ("Dkl2: ", kl_div)
         return kl_div
 
     def get_output_for_reparametrization(self, input):
@@ -180,9 +185,8 @@ class BayesianLayer(nn.Module):
 
     def get_output_for_default(self, input):
         input = input.view(input.size()[0], -1)
-        W = self.get_W() # Variable(torch.from_numpy(self.get_W()).float())
-        b = self.get_b() #Variable(torch.from_numpy(self.get_b()).float())
-        # print (input.size(), W.size())
+        W = self.get_W()
+        b = self.get_b()
         activation = torch.addmm(b.expand(input.size()[0], W.size()[1]), input, W)
 
         if self.nonlinearity is not None:
@@ -260,8 +264,6 @@ class BNN(nn.Module):
         for _ in range(self.n_samples):
             # Make prediction.
             prediction = self.forward(inputs)
-            # print ("inputs: ", inputs.size())
-            # print ("targets: ", targets.size())
             # Calculate model likelihood log(P(D|w)).
             _log_p_D_given_w.append(self._log_prob_normal(targets, prediction, self.likelihood_sd))
 
@@ -301,6 +303,62 @@ class BNN(nn.Module):
         # self.kl_div() should be zero when taking second order step
         # info_gain() == kl_div()
         return self.info_gain() - _log_p_D_given_w / self.n_samples
+
+    def fast_kl_div(self, inputs, targets, step_size=0.1):
+        """
+        Approximate KL div by curvature at origin. Ref VIME.
+        """
+        # save old parameters
+        self.save_old_params()
+        # compute gradients
+        self.opt.zero_grad()
+        inputs = Variable(torch.from_numpy(inputs)).float()
+        targets = Variable(torch.from_numpy(targets)).float()
+        loss = self.loss_last_sample(inputs, targets)
+        loss.backward()
+        # now variables should have populated gradients
+
+        kl_component = []
+        for m in self.modules():
+            if isinstance(m, BayesianLayer):
+                # compute kl for mu
+                mu = m.mu.data
+                mu_grad = m.mu.grad.data
+                rho_old = m.rho_old
+                invH = torch.log(1 + torch.exp(rho_old)).pow(2.)
+                # print (type(mu_grad), type(invH))
+                kl_component.append((step_size**2. * mu_grad.pow(2.) * invH).sum())
+
+                # compute kl for rho
+                rho = m.rho.data
+                rho_grad = m.rho.grad.data
+                rho_old = m.rho_old
+                # print (type(rho_grad))
+                H = 2. * (torch.exp(2 * rho)) / (1. + torch.exp(rho)).pow(2.) / (torch.log(1. + torch.exp(rho)).pow(2.))
+                invH = 1. / H
+                # print (type(invH))
+                kl_component.append((step_size**2. * rho_grad.pow(2.) * invH).sum())
+
+                # compute kl for b_mu
+                b_mu = m.b_mu.data
+                b_mu_grad = m.b_mu.grad.data
+                b_rho_old = m.b_rho_old
+                invH = torch.log(1 + torch.exp(b_rho_old)).pow(2.)
+                kl_component.append((step_size**2. * b_mu_grad.pow(2.) * invH).sum())
+
+                # compute kl for rho
+                b_rho = m.b_rho.data
+                b_rho_grad = m.b_rho.grad.data
+                b_rho_old = m.b_rho_old
+                # print (type(rho_grad))
+                H = 2. * (torch.exp(2 * b_rho)) / (1. + torch.exp(b_rho)).pow(2.) / (torch.log(1. + torch.exp(b_rho)).pow(2.))
+                invH = 1. / H
+                # print (type(invH))
+                kl_component.append((step_size**2. * b_rho_grad.pow(2.) * invH).sum())
+
+        # print (sum(kl_component))
+        self.reset_to_old_params()
+        return sum(kl_component)
 
     def kl_given_sample(self, inputs, targets):
         inputs = Variable(torch.from_numpy(inputs)).float()
