@@ -275,7 +275,7 @@ class BNN(nn.Module):
         # Calculate loss function.
         return kl / self.n_batches - log_p_D_given_w / self.n_samples
 
-    def train(self, inputs, targets):
+    def train(self, inputs, targets, use_cuda=False):
         self.opt.zero_grad()
         # print ("inputs: ", inputs.shape)
         # print ("targets: ", targets.shape)
@@ -304,7 +304,7 @@ class BNN(nn.Module):
         # info_gain() == kl_div()
         return self.info_gain() - _log_p_D_given_w / self.n_samples
 
-    def fast_kl_div(self, inputs, targets, step_size=0.1):
+    def fast_kl_div(self, inputs, targets, step_size=0.1, use_cuda=False):
         """
         Approximate KL div by curvature at origin. Ref VIME.
         """
@@ -314,6 +314,9 @@ class BNN(nn.Module):
         self.opt.zero_grad()
         inputs = Variable(torch.from_numpy(inputs)).float()
         targets = Variable(torch.from_numpy(targets)).float()
+        if use_cuda:
+            inputs = inputs.cuda()
+            targets = targets.cuda()
         loss = self.loss_last_sample(inputs, targets)
         loss.backward()
         # now variables should have populated gradients

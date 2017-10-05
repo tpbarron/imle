@@ -15,40 +15,40 @@ def weights_init(m):
             m.bias.data.fill_(0)
 
 
-# Necessary for my KFAC implementation.
-class AddBias(nn.Module):
-    def __init__(self, out_features):
-        super(AddBias, self).__init__()
-        self.bias = nn.Parameter(torch.zeros(out_features, 1))
-
-    def forward(self, x):
-        if x.dim() == 2:
-            bias = self.bias.t().view(1, -1)
-        else:
-            bias = self.bias.t().view(1, -1, 1, 1)
-
-        return x + bias
+# # Necessary for my KFAC implementation.
+# class AddBias(nn.Module):
+#     def __init__(self, out_features):
+#         super(AddBias, self).__init__()
+#         self.bias = nn.Parameter(torch.zeros(out_features, 1))
+#
+#     def forward(self, x):
+#         if x.dim() == 2:
+#             bias = self.bias.t().view(1, -1)
+#         else:
+#             bias = self.bias.t().view(1, -1, 1, 1)
+#
+#         return x + bias
 
 
 class CNNPolicy(torch.nn.Module):
     def __init__(self, num_inputs, action_space):
         super(CNNPolicy, self).__init__()
-        self.conv1 = nn.Conv2d(num_inputs, 32, 8, stride=4, bias=False)
-        self.ab1 = AddBias(32)
-        self.conv2 = nn.Conv2d(32, 64, 4, stride=2, bias=False)
-        self.ab2 = AddBias(64)
-        self.conv3 = nn.Conv2d(64, 32, 3, stride=1, bias=False)
-        self.ab3 = AddBias(32)
+        self.conv1 = nn.Conv2d(num_inputs, 32, 8, stride=4) #, bias=False)
+        # self.ab1 = AddBias(32)
+        self.conv2 = nn.Conv2d(32, 64, 4, stride=2) #, bias=False)
+        # self.ab2 = AddBias(64)
+        self.conv3 = nn.Conv2d(64, 32, 3, stride=1) #, bias=False)
+        # self.ab3 = AddBias(32)
 
-        self.linear1 = nn.Linear(32 * 7 * 7, 512, bias=False)
-        self.ab_fc1 = AddBias(512)
+        self.linear1 = nn.Linear(32 * 7 * 7, 512) #, bias=False)
+        # self.ab_fc1 = AddBias(512)
 
-        self.critic_linear = nn.Linear(512, 1, bias=False)
-        self.ab_fc2 = AddBias(1)
+        self.critic_linear = nn.Linear(512, 1) #, bias=False)
+        # self.ab_fc2 = AddBias(1)
 
         num_outputs = action_space.n
-        self.actor_linear = nn.Linear(512, num_outputs, bias=False)
-        self.ab_fc3 = AddBias(num_outputs)
+        self.actor_linear = nn.Linear(512, num_outputs) #, bias=False)
+        # self.ab_fc3 = AddBias(num_outputs)
 
         self.apply(weights_init)
 
@@ -62,24 +62,25 @@ class CNNPolicy(torch.nn.Module):
 
     def forward(self, inputs):
         x = self.conv1(inputs / 255.0)
-        x = self.ab1(x)
+        # x = self.ab1(x)
         x = F.relu(x)
 
         x = self.conv2(x)
-        x = self.ab2(x)
+        # x = self.ab2(x)
         x = F.relu(x)
 
         x = self.conv3(x)
-        x = self.ab3(x)
+        # x = self.ab3(x)
         x = F.relu(x)
 
         x = x.view(-1, 32 * 7 * 7)
         x = self.linear1(x)
-        x = self.ab_fc1(x)
+        # x = self.ab_fc1(x)
         x = F.relu(x)
 
-        return self.ab_fc2(self.critic_linear(x)), self.ab_fc3(
-            self.actor_linear(x))
+        return self.critic_linear(x), self.actor_linear(x)
+        # return self.ab_fc2(self.critic_linear(x)), self.ab_fc3(
+        #     self.actor_linear(x))
 
     def act(self, inputs):
         value, logits = self(inputs)
@@ -89,16 +90,11 @@ class CNNPolicy(torch.nn.Module):
 
     def evaluate_actions(self, inputs, actions):
         assert inputs.dim() == 4, "Expect to have inputs in num_processes * num_steps x ... format"
-
         values, logits = self(inputs)
-
         log_probs = F.log_softmax(logits)
         probs = F.softmax(logits)
-
         action_log_probs = log_probs.gather(1, actions)
-
         dist_entropy = -(log_probs * probs).sum(-1).mean()
-
         return values, action_log_probs, dist_entropy
 
 
@@ -107,25 +103,26 @@ class CNNContinuousPolicy(torch.nn.Module):
     def __init__(self, num_inputs, action_space):
         super(CNNContinuousPolicy, self).__init__()
 
-        self.conv1 = nn.Conv2d(num_inputs, 32, 8, stride=4, bias=False)
-        self.ab1 = AddBias(32)
-        self.conv2 = nn.Conv2d(32, 64, 4, stride=2, bias=False)
-        self.ab2 = AddBias(64)
-        self.conv3 = nn.Conv2d(64, 32, 3, stride=1, bias=False)
-        self.ab3 = AddBias(32)
+        self.conv1 = nn.Conv2d(num_inputs, 32, 8, stride=4)#, bias=False)
+        # self.ab1 = AddBias(32)
+        self.conv2 = nn.Conv2d(32, 64, 4, stride=2) #, bias=False)
+        # self.ab2 = AddBias(64)
+        self.conv3 = nn.Conv2d(64, 32, 3, stride=1)#, bias=False)
+        # self.ab3 = AddBias(32)
 
-        self.linear1 = nn.Linear(32 * 7 * 7, 512, bias=False)
-        self.ab_fc1 = AddBias(512)
+        self.linear1 = nn.Linear(32 * 7 * 7, 512) #, bias=False)
+        # self.ab_fc1 = AddBias(512)
 
-        self.critic_linear = nn.Linear(512, 1, bias=False)
-        self.ab_fc2 = AddBias(1)
+        self.critic_linear = nn.Linear(512, 1)#, bias=False)
+        # self.ab_fc2 = AddBias(1)
 
         num_outputs = action_space.shape[0]
-        self.actor_linear = nn.Linear(512, num_outputs, bias=False)
+        self.actor_linear = nn.Linear(512, num_outputs)#, bias=False)
         # self.ab_fc3 = AddBias(num_outputs)
 
-        self.a_ab_mean = AddBias(action_space.shape[0])
-        self.a_ab_logstd = AddBias(action_space.shape[0])
+        self.a_log_std = nn.Parameter(torch.zeros(1, action_space.shape[0]))
+        # self.a_ab_mean = AddBias(action_space.shape[0])
+        # self.a_ab_logstd = AddBias(action_space.shape[0])
 
         self.apply(weights_init)
 
@@ -139,50 +136,52 @@ class CNNContinuousPolicy(torch.nn.Module):
 
     def encode(self, inputs):
         x = self.conv1(inputs / 255.0)
-        x = self.ab1(x)
+        # x = self.ab1(x)
         x = F.relu(x)
 
         x = self.conv2(x)
-        x = self.ab2(x)
+        # x = self.ab2(x)
         x = F.relu(x)
 
         x = self.conv3(x)
-        x = self.ab3(x)
+        # x = self.ab3(x)
         x = F.relu(x)
 
         x = x.view(-1, 32 * 7 * 7)
         x = self.linear1(x)
-        x = self.ab_fc1(x)
+        # x = self.ab_fc1(x)
         return x
 
     def forward(self, inputs):
         x = self.conv1(inputs / 255.0)
-        x = self.ab1(x)
+        # x = self.ab1(x)
         x = F.relu(x)
 
         x = self.conv2(x)
-        x = self.ab2(x)
+        # x = self.ab2(x)
         x = F.relu(x)
 
         x = self.conv3(x)
-        x = self.ab3(x)
+        # x = self.ab3(x)
         x = F.relu(x)
 
         x = x.view(-1, 32 * 7 * 7)
         x = self.linear1(x)
-        x = self.ab_fc1(x)
+        # x = self.ab_fc1(x)
         x = F.relu(x)
 
-        value = self.ab_fc2(self.critic_linear(x))
-        action_mean = self.a_ab_mean(self.actor_linear(x))
+        value = self.critic_linear(x)
+        action_mean = self.actor_linear(x)
 
-        #  An ugly hack for my KFAC implementation.
-        zeros = Variable(torch.zeros(action_mean.size()), volatile=action_mean.volatile)
-        if action_mean.is_cuda:
-            zeros = zeros.cuda()
+        action_logstd = self.a_log_std.expand_as(action_mean)
 
-        als = self.a_ab_logstd(zeros)
-        action_logstd = als
+        # #  An ugly hack for my KFAC implementation.
+        # zeros = Variable(torch.zeros(action_mean.size()), volatile=action_mean.volatile)
+        # if action_mean.is_cuda:
+        #     zeros = zeros.cuda()
+        #
+        # als = self.a_ab_logstd(zeros)
+        # action_logstd = als
 
         return value, action_mean, action_logstd
 
@@ -213,28 +212,30 @@ class CNNContinuousPolicySeparate(torch.nn.Module):
     def __init__(self, num_inputs, action_space):
         super(CNNContinuousPolicySeparate, self).__init__()
 
-        self.conv1_a = nn.Conv2d(num_inputs, 32, 8, stride=4, bias=False)
-        self.ab1_a = AddBias(32)
-        self.conv2_a = nn.Conv2d(32, 64, 4, stride=2, bias=False)
-        self.ab2_a = AddBias(64)
-        self.conv3_a = nn.Conv2d(64, 32, 3, stride=1, bias=False)
-        self.ab3_a = AddBias(32)
-        self.linear1_a = nn.Linear(32 * 7 * 7, 512, bias=False)
-        self.ab_fc1_a = AddBias(512)
+        self.conv1_a = nn.Conv2d(num_inputs, 32, 8, stride=4)#, bias=False)
+        # self.ab1_a = AddBias(32)
+        self.conv2_a = nn.Conv2d(32, 64, 4, stride=2) #, bias=False)
+        # self.ab2_a = AddBias(64)
+        self.conv3_a = nn.Conv2d(64, 32, 3, stride=1) #, bias=False)
+        # self.ab3_a = AddBias(32)
+        self.linear1_a = nn.Linear(32 * 7 * 7, 512) #, bias=False)
+        # self.ab_fc1_a = AddBias(512)
         self.fc_mean_a = nn.Linear(512, action_space.shape[0])
-        self.a_ab_mean = AddBias(action_space.shape[0])
-        self.a_ab_logstd = AddBias(action_space.shape[0])
+        self.a_log_std = nn.Parameter(torch.zeros(1, action_space.shape[0]))
 
-        self.conv1_v = nn.Conv2d(num_inputs, 32, 8, stride=4, bias=False)
-        self.ab1_v = AddBias(32)
-        self.conv2_v = nn.Conv2d(32, 64, 4, stride=2, bias=False)
-        self.ab2_v = AddBias(64)
-        self.conv3_v = nn.Conv2d(64, 32, 3, stride=1, bias=False)
-        self.ab3_v = AddBias(32)
-        self.linear1_v = nn.Linear(32 * 7 * 7, 512, bias=False)
-        self.ab_fc1_v = AddBias(512)
-        self.critic_linear_v = nn.Linear(512, 1, bias=False)
-        self.ab_critic_v = AddBias(1)
+        # self.a_ab_mean = AddBias(action_space.shape[0])
+        # self.a_ab_logstd = AddBias(action_space.shape[0])
+
+        self.conv1_v = nn.Conv2d(num_inputs, 32, 8, stride=4) #, bias=False)
+        # self.ab1_v = AddBias(32)
+        self.conv2_v = nn.Conv2d(32, 64, 4, stride=2) #, bias=False)
+        # self.ab2_v = AddBias(64)
+        self.conv3_v = nn.Conv2d(64, 32, 3, stride=1) #, bias=False)
+        # self.ab3_v = AddBias(32)
+        self.linear1_v = nn.Linear(32 * 7 * 7, 512) #, bias=False)
+        # self.ab_fc1_v = AddBias(512)
+        self.critic_linear_v = nn.Linear(512, 1) #, bias=False)
+        # self.ab_critic_v = AddBias(1)
 
         self.apply(weights_init)
 
@@ -252,74 +253,67 @@ class CNNContinuousPolicySeparate(torch.nn.Module):
 
     def encode(self, inputs):
         x = self.conv1_v(inputs / 255.0)
-        x = self.ab1_v(x)
+        # x = self.ab1_v(x)
         x = F.relu(x)
 
         x = self.conv2_v(x)
-        x = self.ab2_v(x)
+        # x = self.ab2_v(x)
         x = F.relu(x)
 
         x = self.conv3_v(x)
-        x = self.ab3_v(x)
+        # x = self.ab3_v(x)
         x = F.relu(x)
 
         x = x.view(-1, 32 * 7 * 7)
         x = self.linear1_v(x)
-        x = self.ab_fc1_v(x)
+        # x = self.ab_fc1_v(x)
         return x
 
     def forward(self, inputs):
         x = self.conv1_v(inputs / 255.0)
-        x = self.ab1_v(x)
+        # x = self.ab1_v(x)
         x = F.relu(x)
 
         x = self.conv2_v(x)
-        x = self.ab2_v(x)
+        # x = self.ab2_v(x)
         x = F.relu(x)
 
         x = self.conv3_v(x)
-        x = self.ab3_v(x)
+        # x = self.ab3_v(x)
         x = F.relu(x)
 
         x = x.view(-1, 32 * 7 * 7)
         x = self.linear1_v(x)
-        x = self.ab_fc1_v(x)
+        # x = self.ab_fc1_v(x)
         x = F.relu(x)
 
         x = self.critic_linear_v(x)
-        x = self.ab_critic_v(x)
+        # x = self.ab_critic_v(x)
 
         value = x
 
         x = self.conv1_a(inputs / 255.0)
-        x = self.ab1_a(x)
+        # x = self.ab1_a(x)
         x = F.relu(x)
 
         x = self.conv2_a(x)
-        x = self.ab2_a(x)
+        # x = self.ab2_a(x)
         x = F.relu(x)
 
         x = self.conv3_a(x)
-        x = self.ab3_a(x)
+        # x = self.ab3_a(x)
         x = F.relu(x)
 
         x = x.view(-1, 32 * 7 * 7)
         x = self.linear1_a(x)
-        x = self.ab_fc1_a(x)
+        # x = self.ab_fc1_a(x)
         x = F.relu(x)
 
         x = self.fc_mean_a(x)
-        x = self.a_ab_mean(x)
+        # x = self.a_ab_mean(x)
 
         action_mean = x
-
-        #  An ugly hack for my KFAC implementation.
-        zeros = Variable(torch.zeros(x.size()), volatile=x.volatile)
-        if x.is_cuda:
-            zeros = zeros.cuda()
-
-        x = self.a_ab_logstd(zeros)
-        action_logstd = x
+        action_logstd = self.a_log_std.expand_as(action_mean)
 
         return value, action_mean, action_logstd
 
@@ -360,20 +354,22 @@ class MLPPolicy(torch.nn.Module):
         self.obs_filter = ObsNorm((1, num_inputs), clip=5)
         self.action_space = action_space
 
-        self.a_fc1 = nn.Linear(num_inputs, 64, bias=False)
-        self.a_ab1 = AddBias(64)
-        self.a_fc2 = nn.Linear(64, 64, bias=False)
-        self.a_ab2 = AddBias(64)
-        self.a_fc_mean = nn.Linear(64, action_space.shape[0], bias=False)
-        self.a_ab_mean = AddBias(action_space.shape[0])
-        self.a_ab_logstd = AddBias(action_space.shape[0])
+        self.a_fc1 = nn.Linear(num_inputs, 64) #, bias=False)
+        # self.a_ab1 = AddBias(64)
+        self.a_fc2 = nn.Linear(64, 64) #, bias=False)
+        # self.a_ab2 = AddBias(64)
+        self.a_fc_mean = nn.Linear(64, action_space.shape[0]) #, bias=False)
+        self.a_log_std = nn.Parameter(torch.zeros(1, action_space.shape[0]))
 
-        self.v_fc1 = nn.Linear(num_inputs, 64, bias=False)
-        self.v_ab1 = AddBias(64)
-        self.v_fc2 = nn.Linear(64, 64, bias=False)
-        self.v_ab2 = AddBias(64)
-        self.v_fc3 = nn.Linear(64, 1, bias=False)
-        self.v_ab3 = AddBias(1)
+        # self.a_ab_mean = AddBias(action_space.shape[0])
+        # self.a_ab_logstd = AddBias(action_space.shape[0])
+
+        self.v_fc1 = nn.Linear(num_inputs, 64) #, bias=False)
+        # self.v_ab1 = AddBias(64)
+        self.v_fc2 = nn.Linear(64, 64) #, bias=False)
+        # self.v_ab2 = AddBias(64)
+        self.v_fc3 = nn.Linear(64, 1) #, bias=False)
+        # self.v_ab3 = AddBias(1)
 
         self.apply(weights_init_mlp)
 
@@ -395,47 +391,49 @@ class MLPPolicy(torch.nn.Module):
         inputs.data = self.obs_filter(inputs.data)
 
         x = self.v_fc1(inputs)
-        x = self.v_ab1(x)
+        # x = self.v_ab1(x)
         x = F.tanh(x)
 
         x = self.v_fc2(x)
-        x = self.v_ab2(x)
+        # x = self.v_ab2(x)
         return x
 
     def forward(self, inputs):
         inputs.data = self.obs_filter(inputs.data)
 
         x = self.v_fc1(inputs)
-        x = self.v_ab1(x)
+        # x = self.v_ab1(x)
         x = F.tanh(x)
 
         x = self.v_fc2(x)
-        x = self.v_ab2(x)
+        # x = self.v_ab2(x)
         x = F.tanh(x)
 
         x = self.v_fc3(x)
-        x = self.v_ab3(x)
+        # x = self.v_ab3(x)
         value = x
 
         x = self.a_fc1(inputs)
-        x = self.a_ab1(x)
+        # x = self.a_ab1(x)
         x = F.tanh(x)
 
         x = self.a_fc2(x)
-        x = self.a_ab2(x)
+        # x = self.a_ab2(x)
         x = F.tanh(x)
 
         x = self.a_fc_mean(x)
-        x = self.a_ab_mean(x)
+        # x = self.a_ab_mean(x)
         action_mean = x
 
-        #  An ugly hack for my KFAC implementation.
-        zeros = Variable(torch.zeros(x.size()), volatile=x.volatile)
-        if x.is_cuda:
-            zeros = zeros.cuda()
 
-        x = self.a_ab_logstd(zeros)
-        action_logstd = x
+        action_logstd = self.a_log_std.expand_as(action_mean)
+        # #  An ugly hack for my KFAC implementation.
+        # zeros = Variable(torch.zeros(x.size()), volatile=x.volatile)
+        # if x.is_cuda:
+        #     zeros = zeros.cuda()
+        #
+        # x = self.a_ab_logstd(zeros)
+        # action_logstd = x
 
         return value, action_mean, action_logstd
 

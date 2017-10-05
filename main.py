@@ -27,7 +27,7 @@ import bnn
 import gym_x
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--env-name', type=str, default='AcrobotVisionContinuousX-v0', help='Env to train.')
+parser.add_argument('--env-name', type=str, default='AcrobotContinuousVisionX-v0', help='Env to train.')
 parser.add_argument('--n-iter', type=int, default=250, help='Num iters')
 parser.add_argument('--max-episode-steps', type=int, default=500, help='Max num ep steps')
 parser.add_argument('--max-replay-size', type=int, default=100000, help='Max num samples to store in replay memory')
@@ -73,6 +73,7 @@ parser.add_argument('--no-vis', action='store_true', default=False, help='disabl
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
 args.vis = not args.no_vis
+print (args.log_dir)
 os.makedirs(args.log_dir, exist_ok=True)
 
 assert not (args.vime and args.imle), "Cannot do both VIME and IMLE"
@@ -82,6 +83,8 @@ envs = SubprocVecEnv([
     make_env(args.env_name, args.seed, i, args.log_dir)
     for i in range(args.num_processes)
 ])
+torch.manual_seed(args.seed)
+np.random.seed(args.seed)
 
 obs_shape = envs.observation_space.shape
 if envs.action_space.__class__.__name__ == 'Discrete':
@@ -90,6 +93,7 @@ if envs.action_space.__class__.__name__ == 'Discrete':
     action_shape = 1
 else:
     if len(obs_shape) > 1:
+        obs_shape = (obs_shape[0] * args.num_stack, *obs_shape[1:])
         if args.shared_actor_critic:
             actor_critic = CNNContinuousPolicy(obs_shape[0], envs.action_space)
         else:
@@ -97,9 +101,6 @@ else:
     else:
         actor_critic = MLPPolicy(obs_shape[0], envs.action_space)
     action_shape = envs.action_space.shape[0]
-
-old_model = copy.deepcopy(actor_critic)
-
 
 if args.vime:
     num_inputs = envs.observation_space.shape[0]
@@ -110,31 +111,38 @@ elif args.imle:
     num_model_inputs = 512
     num_actions = envs.action_space.shape[0]
 
+if args.imle or args.vime:
+    memory = replay_memory.Memory(args.max_replay_size,
+                                  envs.observation_space.shape,
+                                  envs.action_space.shape[0])
+    # print (num_inputs, num_actions)
+    dynamics = bnn.BNN(num_model_inputs+1, num_model_inputs, lr=args.bnn_lr, n_samples=args.bnn_n_samples)
+    kl_mean = deque(maxlen=args.kl_q_len)
+    kl_std = deque(maxlen=args.kl_q_len)
+    kl_previous = deque(maxlen=args.kl_q_len)
+
+if args.cuda:
+    actor_critic.cuda()
+    # dynamics = dynamics.cuda()
+
+old_model = copy.deepcopy(actor_critic)
+
 
 optimizer = optim.Adam(actor_critic.parameters(), args.lr, eps=args.eps)
 
-# policy = models.DiscreteMLPPolicy(num_inputs, num_actions)
-# value_fn = models.MLPValue(num_inputs)
-# optimizer_policy = optim.Adam(policy.parameters(), lr=0.001)
-# optimizer_value = optim.Adam(value_fn.parameters(), lr=0.01)
-
-# algo = actor_critic.AdvantageActorCritic(policy, value_fn, args.gamma, args.tau)
-memory = replay_memory.Memory(args.max_replay_size,
-                              envs.observation_space.shape,
-                              1) #env.action_space.shape)
-# print (num_inputs, num_actions)
-dynamics = bnn.BNN(num_model_inputs+1, num_model_inputs, lr=args.bnn_lr, n_samples=args.bnn_n_samples)
-kl_mean = deque(maxlen=args.kl_q_len)
-kl_std = deque(maxlen=args.kl_q_len)
-kl_previous = deque(maxlen=args.kl_q_len)
 
 def compute_bnn_accuracy(inputs, actions, targets, encode=False):
     acc = 0.
     for inp, act, tar in zip(inputs, actions, targets):
         if encode:
-            inp_feat = actor_critic.encode(Variable(torch.from_numpy(inp))).data.numpy()
+            inp_var = Variable(torch.from_numpy(inp))
+            tar_var = Variable(torch.from_numpy(tar))
+            if args.cuda:
+                inp_var = inp_var.cuda()
+                tar_var = tar_var.cuda()
+            inp_feat = actor_critic.encode(inp_var).data.cpu().numpy()
             # print ("Inp feat: ", inp_feat.shape)
-            tar_feat = actor_critic.encode(Variable(torch.from_numpy(tar))).data.numpy()
+            tar_feat = actor_critic.encode(tar_var).data.cpu().numpy()
             input_dat = np.hstack([inp_feat.reshape(inp_feat.shape[0], -1), act])
             # print ("inp dat:", input_dat.shape)
             target_dat = tar_feat.reshape(tar_feat.shape[0], -1)
@@ -180,13 +188,19 @@ def imle_bnn_update(inputs, actions, targets):
     print ("IMLE BNN update")
     print ("Old BNN accuracy: ", compute_bnn_accuracy(inputs, actions, targets, encode=True))
     for inp, act, tar in zip(inputs, actions, targets):
-        inp_feat = actor_critic.encode(Variable(torch.from_numpy(inp))).data.numpy()
+        inp_var = Variable(torch.from_numpy(inp))
+        tar_var = Variable(torch.from_numpy(tar))
+        if args.cuda:
+            inp_var = inp_var.cuda()
+            tar_var = tar_var.cuda()
+
+        inp_feat = actor_critic.encode(inp_var).data.cpu().numpy()
         # print ("Inp feat: ", inp_feat.shape)
-        tar_feat = actor_critic.encode(Variable(torch.from_numpy(tar))).data.numpy()
+        tar_feat = actor_critic.encode(tar_var).data.cpu().numpy()
         input_dat = np.hstack([inp_feat.reshape(inp_feat.shape[0], -1), act])
         # print ("inp dat:", input_dat.shape)
         target_dat = tar_feat.reshape(tar_feat.shape[0], -1)
-        dynamics.train(input_dat, target_dat)
+        dynamics.train(input_dat, target_dat, use_cuda=args.cuda)
     print ("New BNN accuracy: ", compute_bnn_accuracy(inputs, actions, targets, encode=True))
 
 
@@ -197,8 +211,14 @@ def imle_bnn_bonus(obs, act, next_obs):
     act = act[np.newaxis,:]
 
     # unpacking var ensures gradients not passed
-    obs_feat = actor_critic.encode(Variable(torch.from_numpy(obs)).float()).data.numpy()
-    next_obs_feat = actor_critic.encode(Variable(torch.from_numpy(next_obs)).float()).data.numpy()
+    obs_input = Variable(torch.from_numpy(obs)).float()
+    next_obs_input = Variable(torch.from_numpy(next_obs)).float()
+    if args.cuda:
+        obs_input = obs_input.cuda()
+        next_obs_input = next_obs_input.cuda()
+
+    obs_feat = actor_critic.encode(obs_input).data.cpu().numpy()
+    next_obs_feat = actor_critic.encode(next_obs_input).data.cpu().numpy()
 
     # print ("Computing VIME bonus: ", obs.shape, act.shape, next_obs.shape)
     inputs = np.hstack([obs_feat, act])
@@ -277,6 +297,7 @@ def train():
         shape_dim0 = envs.observation_space.shape[0]
         state = torch.from_numpy(state).float()
         if args.num_stack > 1:
+            # print (current_state.size())
             current_state[:, :-shape_dim0] = current_state[:, shape_dim0:]
         current_state[:, -shape_dim0:] = state
 
@@ -288,6 +309,10 @@ def train():
     # These variables are used to compute average rewards for all processes.
     episode_rewards = torch.zeros([args.num_processes, 1])
     final_rewards = torch.zeros([args.num_processes, 1])
+
+    if args.cuda:
+        current_state = current_state.cuda()
+        rollouts.cuda()
 
     for num_update in count(1):
         step = 0
@@ -308,17 +333,20 @@ def train():
             episode_rewards += reward
 
             # compute bonuses
-            bonuses = []
-            for i in range(args.num_processes):
-                bonus = 0
-                if len(memory) >= args.min_replay_size:
-                    # compute reward bonuses
-                    if args.vime:
-                        bonus = vime_bnn_bonus(rollouts.states[step][i].numpy(), cpu_actions[i], state[i])
-                    elif args.imle:
-                        bonus = imle_bnn_bonus(rollouts.states[step][i].numpy(), cpu_actions[i], state[i])
-                bonuses.append(bonus)
-            bonuses = torch.from_numpy(np.array(bonuses)).unsqueeze(1)
+            if args.imle or args.vime:
+                bonuses = []
+                for i in range(args.num_processes):
+                    bonus = 0
+                    if len(memory) >= args.min_replay_size:
+                        # compute reward bonuses
+                        if args.vime:
+                            bonus = vime_bnn_bonus(rollouts.states[step][i].cpu().numpy(), cpu_actions[i], state[i])
+                        elif args.imle:
+                            bonus = imle_bnn_bonus(rollouts.states[step][i].cpu().numpy(), cpu_actions[i], state[i])
+                    bonuses.append(bonus)
+                bonuses = torch.from_numpy(np.array(bonuses)).unsqueeze(1)
+            else:
+                bonuses = torch.zeros(reward.size())
 
             # If done then clean the history of observations.
             masks = torch.FloatTensor([[0.0] if done_ else [1.0] for done_ in done])
@@ -327,7 +355,7 @@ def train():
             episode_rewards *= masks
 
             if args.cuda:
-                masks = masks.imle()
+                masks = masks.cuda()
 
             if current_state.dim() == 4:
                 current_state *= masks.unsqueeze(2).unsqueeze(2)
@@ -341,12 +369,16 @@ def train():
 
             rollouts.insert(step, current_state, action.data, value.data, reward, bonuses, masks)
 
-            # add unnormalized bonus to memory for prioritization
-            for i in range(args.num_processes):
-                memory.add_sample(current_state[i].numpy(), action[i].data.numpy(), reward[i].numpy(), 1-masks[i].numpy())
-                # TODO:
-                # if 1-masks[i].numpy():
-                #     bonuses.append(bonuses[-1])
+            if args.imle or args.vime:
+                # add unnormalized bonus to memory for prioritization
+                for i in range(args.num_processes):
+                    memory.add_sample(current_state[i].cpu().numpy(),
+                                      action[i].data.cpu().numpy(),
+                                      reward[i].cpu().numpy(),
+                                      1-masks[i].cpu().numpy())
+                    # TODO:
+                    # if 1-masks[i].numpy():
+                    #     bonuses.append(bonuses[-1])
             step += 1
 
         next_value = actor_critic(Variable(rollouts.states[-1], volatile=True))[0].data
@@ -354,23 +386,25 @@ def train():
         if hasattr(actor_critic, 'obs_filter'):
             actor_critic.obs_filter.update(rollouts.states[:-1].view(-1, *obs_shape))
 
-        # normalize bonuses
-        kl_previous.append(rollouts.bonuses.median()) #np.median(bonuses))
-        previous_mean_kl = np.mean(np.asarray(kl_previous))
-        if previous_mean_kl > 0:
-            # divide kls by previous_mean_kl
-            # for i in range(len(bonuses)):
-            #     bonuses[i] = bonuses[i] / previous_mean_kl
-            rollouts.bonuses.div_(previous_mean_kl)
-        print ("Bonuses (no eta): (mean) ", rollouts.bonuses.mean(),
-               ", (std) ", rollouts.bonuses.std(),
-               ", Bonuses (w/ eta): (mean) ", rollouts.bonuses.mul(args.eta).mean(),
-               ", (std) ", rollouts.bonuses.mul(args.eta).std())
-        rollouts.apply_bonuses(args.eta)
+        if args.imle or args.vime:
+            # normalize bonuses
+            kl_previous.append(rollouts.bonuses.median()) #np.median(bonuses))
+            previous_mean_kl = np.mean(np.asarray(kl_previous))
+            if previous_mean_kl > 0:
+                # divide kls by previous_mean_kl
+                # for i in range(len(bonuses)):
+                #     bonuses[i] = bonuses[i] / previous_mean_kl
+                rollouts.bonuses.div_(previous_mean_kl)
+            print ("Bonuses (no eta): (mean) ", rollouts.bonuses.mean(),
+                   ", (std) ", rollouts.bonuses.std(),
+                   ", Bonuses (w/ eta): (mean) ", rollouts.bonuses.mul(args.eta).mean(),
+                   ", (std) ", rollouts.bonuses.mul(args.eta).std())
+            rollouts.apply_bonuses(args.eta)
         rollouts.compute_returns(next_value, args.use_gae, args.gamma, args.tau)
         do_exit = ppo_update(num_update, rollouts, final_rewards)
+
         # do bnn update if memory is large enough
-        if memory.size >= args.min_replay_size and num_update % 5 == 0:
+        if (args.imle or args.vime) and memory.size >= args.min_replay_size and num_update % 5 == 0:
             print ("Updating BNN")
             obs_mean, obs_std, act_mean, act_std = memory.mean_obs_act()
             _inputss, _targetss, _actionss = [], [], []
