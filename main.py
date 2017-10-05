@@ -2,6 +2,8 @@ import argparse
 from collections import deque
 from itertools import count
 import copy
+import os
+import sys
 import gym
 import numpy as np
 import torch
@@ -32,7 +34,7 @@ parser.add_argument('--max-replay-size', type=int, default=100000, help='Max num
 parser.add_argument('--render', action='store_true', help='Render env observations')
 parser.add_argument('--vime', action='store_true', help='Do VIME update')
 parser.add_argument('--imle', action='store_true', help='Do IMLE update')
-
+parser.add_argument('--shared-actor-critic', action='store_true', help='Whether to share params between pol and val in network')
 # PPO args
 parser.add_argument('--lr', type=float, default=7e-4, help='learning rate (default: 7e-4)')
 parser.add_argument('--eps', type=float, default=1e-5, help='RMSprop optimizer epsilon (default: 1e-5)')
@@ -71,10 +73,10 @@ parser.add_argument('--no-vis', action='store_true', default=False, help='disabl
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
 args.vis = not args.no_vis
+os.makedirs(args.log_dir, exist_ok=True)
 
 assert not (args.vime and args.imle), "Cannot do both VIME and IMLE"
 
-# env = gym.make('AcrobotX-v0')
 # NOTE: in case someone is searching, this wrapper will also reset the envs when done
 envs = SubprocVecEnv([
     make_env(args.env_name, args.seed, i, args.log_dir)
@@ -87,9 +89,13 @@ if envs.action_space.__class__.__name__ == 'Discrete':
     actor_critic = CNNPolicy(obs_shape[0], envs.action_space)
     action_shape = 1
 else:
-    actor_critic = CNNContinuousPolicySeparate(obs_shape[0], envs.action_space)
-    # actor_critic = CNNContinuousPolicy(obs_shape[0], envs.action_space)
-    # actor_critic = MLPPolicy(obs_shape[0], envs.action_space)
+    if len(obs_shape) > 1:
+        if args.shared_actor_critic:
+            actor_critic = CNNContinuousPolicy(obs_shape[0], envs.action_space)
+        else:
+            actor_critic = CNNContinuousPolicySeparate(obs_shape[0], envs.action_space)
+    else:
+        actor_critic = MLPPolicy(obs_shape[0], envs.action_space)
     action_shape = envs.action_space.shape[0]
 
 old_model = copy.deepcopy(actor_critic)
@@ -254,6 +260,9 @@ def ppo_update(num_updates, rollouts, final_rewards):
                    final_rewards.min(),
                    final_rewards.max(), -dist_entropy.data[0],
                    value_loss.data[0], action_loss.data[0]))
+        if final_rewards.mean() == 1.0: #Then have solved env
+            return True
+    return False
 
     # if num_updates % args.vis_interval == 0:
     #     win = visdom_plot(viz, win, args.log_dir, args.env_name, args.algo)
@@ -318,7 +327,7 @@ def train():
             episode_rewards *= masks
 
             if args.cuda:
-                masks = masks.cuda()
+                masks = masks.imle()
 
             if current_state.dim() == 4:
                 current_state *= masks.unsqueeze(2).unsqueeze(2)
@@ -359,8 +368,7 @@ def train():
                ", (std) ", rollouts.bonuses.mul(args.eta).std())
         rollouts.apply_bonuses(args.eta)
         rollouts.compute_returns(next_value, args.use_gae, args.gamma, args.tau)
-        ppo_update(num_update, rollouts, final_rewards)
-
+        do_exit = ppo_update(num_update, rollouts, final_rewards)
         # do bnn update if memory is large enough
         if memory.size >= args.min_replay_size and num_update % 5 == 0:
             print ("Updating BNN")
@@ -381,6 +389,12 @@ def train():
                 vime_bnn_update(_inputss, _actionss, _targetss)
             elif args.imle:
                 imle_bnn_update(_inputss, _actionss, _targetss)
+
+        # save model
+        torch.save(actor_critic, os.path.join(args.log_dir, 'model'+str(num_update)+'.pth'))
+        if do_exit:
+            envs.close()
+            return
 
 if __name__ == '__main__':
     train()
