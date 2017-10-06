@@ -15,21 +15,6 @@ def weights_init(m):
             m.bias.data.fill_(0)
 
 
-# # Necessary for my KFAC implementation.
-# class AddBias(nn.Module):
-#     def __init__(self, out_features):
-#         super(AddBias, self).__init__()
-#         self.bias = nn.Parameter(torch.zeros(out_features, 1))
-#
-#     def forward(self, x):
-#         if x.dim() == 2:
-#             bias = self.bias.t().view(1, -1)
-#         else:
-#             bias = self.bias.t().view(1, -1, 1, 1)
-#
-#         return x + bias
-
-
 class CNNPolicy(torch.nn.Module):
     def __init__(self, num_inputs, action_space):
         super(CNNPolicy, self).__init__()
@@ -200,6 +185,115 @@ class CNNContinuousPolicy(torch.nn.Module):
     def evaluate_actions(self, inputs, actions):
         assert inputs.dim() == 4, "Expect to have inputs in num_processes * num_steps x ... format"
         value, action_mean, action_logstd = self(inputs)
+        action_std = action_logstd.exp()
+        action_log_probs = -0.5 * ((actions - action_mean) / action_std).pow(2) - 0.5 * math.log(2 * math.pi) - action_logstd
+        action_log_probs = action_log_probs.sum(1, keepdim=True)
+        dist_entropy = 0.5 + math.log(2 * math.pi) + action_log_probs
+        dist_entropy = dist_entropy.sum(-1).mean()
+        return value, action_log_probs, dist_entropy
+
+class CNNContinuousSeparateTuplePolicy(torch.nn.Module):
+
+    def __init__(self, num_inputs1, num_inputs2, action_space):
+        super(CNNContinuousSeparateTuplePolicy, self).__init__()
+
+        self.conv1_a = nn.Conv2d(num_inputs1, 32, 8, stride=4)#, bias=False)
+        self.conv2_a = nn.Conv2d(32, 64, 4, stride=2) #, bias=False)
+        self.conv3_a = nn.Conv2d(64, 32, 3, stride=1) #, bias=False)
+        self.linear1_a = nn.Linear(32 * 7 * 7, 512) #, bias=False)
+        self.fc_mean_a = nn.Linear(512, action_space.shape[0])
+        self.a_log_std = nn.Parameter(torch.zeros(1, action_space.shape[0]))
+
+        self.conv1_v = nn.Conv2d(num_inputs1, 32, 8, stride=4) #, bias=False)
+        self.conv2_v = nn.Conv2d(32, 64, 4, stride=2) #, bias=False)
+        self.conv3_v = nn.Conv2d(64, 32, 3, stride=1) #, bias=False)
+        self.linear1_v = nn.Linear(32 * 7 * 7 + num_inputs2, 512) #, bias=False)
+        self.critic_linear_v = nn.Linear(512, 1) #, bias=False)
+
+        self.apply(weights_init)
+
+        relu_gain = nn.init.calculate_gain('relu')
+        self.conv1_a.weight.data.mul_(relu_gain)
+        self.conv2_a.weight.data.mul_(relu_gain)
+        self.conv3_a.weight.data.mul_(relu_gain)
+        self.linear1_a.weight.data.mul_(relu_gain)
+        self.conv1_v.weight.data.mul_(relu_gain)
+        self.conv2_v.weight.data.mul_(relu_gain)
+        self.conv3_v.weight.data.mul_(relu_gain)
+        self.linear1_v.weight.data.mul_(relu_gain)
+
+        self.train()
+
+    def encode(self, render, joints):
+        x = self.conv1_v(render / 255.0)
+        x = F.relu(x)
+
+        x = self.conv2_v(x)
+        x = F.relu(x)
+
+        x = self.conv3_v(x)
+        x = F.relu(x)
+
+        x = x.view(-1, 32 * 7 * 7)
+        # concat joints
+        x = torch.cat((x, joints), 1)
+        x = self.linear1_v(x)
+        return x
+
+    def forward(self, render, joints):
+        x = self.conv1_v(render / 255.0)
+        x = F.relu(x)
+
+        x = self.conv2_v(x)
+        x = F.relu(x)
+
+        x = self.conv3_v(x)
+        x = F.relu(x)
+
+        x = x.view(-1, 32 * 7 * 7)
+        # concat joints
+        # print (x.size(), joints.size())
+        x = torch.cat((x, joints), 1)
+        # print (x.size())
+        x = self.linear1_v(x)
+        x = F.relu(x)
+
+        x = self.critic_linear_v(x)
+        value = x
+
+        x = self.conv1_a(render / 255.0)
+        x = F.relu(x)
+
+        x = self.conv2_a(x)
+        x = F.relu(x)
+
+        x = self.conv3_a(x)
+        x = F.relu(x)
+
+        x = x.view(-1, 32 * 7 * 7)
+        x = self.linear1_a(x)
+        x = F.relu(x)
+        x = self.fc_mean_a(x)
+
+        action_mean = x
+        action_logstd = self.a_log_std.expand_as(action_mean)
+
+        return value, action_mean, action_logstd
+
+    def act(self, render, joints):
+        value, action_mean, action_logstd = self(render, joints)
+        # print ("value, actm, actlogstd:", value.size(), action_mean.size(), action_logstd.size())
+        action_std = action_logstd.exp()
+        noise = Variable(torch.randn(action_std.size()))
+        if action_std.is_cuda:
+            noise = noise.cuda()
+
+        action = action_mean + action_std * noise
+        return value, action
+
+    def evaluate_actions(self, inputs1, inputs2, actions):
+        assert inputs1.dim() == 4, "Expect to have inputs in num_processes * num_steps x ... format"
+        value, action_mean, action_logstd = self(inputs1, inputs2)
         action_std = action_logstd.exp()
         action_log_probs = -0.5 * ((actions - action_mean) / action_std).pow(2) - 0.5 * math.log(2 * math.pi) - action_logstd
         action_log_probs = action_log_probs.sum(1, keepdim=True)

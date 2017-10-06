@@ -86,21 +86,20 @@ envs = SubprocVecEnv([
 torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 
-obs_shape = envs.observation_space.shape
-if envs.action_space.__class__.__name__ == 'Discrete':
-    obs_shape = (obs_shape[0] * args.num_stack, *obs_shape[1:])
-    actor_critic = CNNPolicy(obs_shape[0], envs.action_space)
-    action_shape = 1
+print (envs.observation_space.spaces)
+joint_obs_shape = envs.observation_space.spaces[1].shape
+img_obs_shape = envs.observation_space.spaces[0].shape
+
+if len(img_obs_shape) > 1:
+    img_obs_shape = (img_obs_shape[0] * args.num_stack, *img_obs_shape[1:])
+    # if args.shared_actor_critic:
+    #     actor_critic = CNNContinuousPolicy(obs_shape[0], envs.action_space)
+    # else:
+    actor_critic = CNNContinuousSeparateTuplePolicy(img_obs_shape[0], joint_obs_shape[0], envs.action_space)
+    # actor_critic = CNNContinuousPolicySeparate(obs_shape[0], envs.action_space)
 else:
-    if len(obs_shape) > 1:
-        obs_shape = (obs_shape[0] * args.num_stack, *obs_shape[1:])
-        if args.shared_actor_critic:
-            actor_critic = CNNContinuousPolicy(obs_shape[0], envs.action_space)
-        else:
-            actor_critic = CNNContinuousPolicySeparate(obs_shape[0], envs.action_space)
-    else:
-        actor_critic = MLPPolicy(obs_shape[0], envs.action_space)
-    action_shape = envs.action_space.shape[0]
+    actor_critic = MLPPolicy(obs_shape[0], envs.action_space)
+action_shape = envs.action_space.shape[0]
 
 if args.vime:
     num_inputs = envs.observation_space.shape[0]
@@ -126,10 +125,7 @@ if args.cuda:
     # dynamics = dynamics.cuda()
 
 old_model = copy.deepcopy(actor_critic)
-
-
 optimizer = optim.Adam(actor_critic.parameters(), args.lr, eps=args.eps)
-
 
 def compute_bnn_accuracy(inputs, actions, targets, encode=False):
     acc = 0.
@@ -249,14 +245,15 @@ def ppo_update(num_updates, rollouts, final_rewards):
             indices = torch.LongTensor(indices)
             if args.cuda:
                 indices = indices.cuda()
-            states_batch = rollouts.states[:-1].view(-1, *obs_shape)[indices]
+            states1_batch = rollouts.states1[:-1].view(-1, *img_obs_shape)[indices]
+            states2_batch = rollouts.states2[:-1].view(-1, *joint_obs_shape)[indices]
             actions_batch = rollouts.actions.view(-1, action_shape)[indices]
             return_batch = rollouts.returns[:-1].view(-1, 1)[indices]
 
             # Reshape to do in a single forward pass for all steps
-            values, action_log_probs, dist_entropy = actor_critic.evaluate_actions(Variable(states_batch), Variable(actions_batch))
+            values, action_log_probs, dist_entropy = actor_critic.evaluate_actions(Variable(states1_batch), Variable(states2_batch), Variable(actions_batch))
 
-            _, old_action_log_probs, _ = old_model.evaluate_actions(Variable(states_batch, volatile=True), Variable(actions_batch, volatile=True))
+            _, old_action_log_probs, _ = old_model.evaluate_actions(Variable(states1_batch, volatile=True), Variable(states2_batch, volatile=True), Variable(actions_batch, volatile=True))
 
             ratio = torch.exp(action_log_probs - Variable(old_action_log_probs.data))
             adv_targ = Variable(advantages.view(-1, 1)[indices])
@@ -270,7 +267,8 @@ def ppo_update(num_updates, rollouts, final_rewards):
             (value_loss + action_loss - dist_entropy * args.entropy_coef).backward()
             optimizer.step()
 
-    rollouts.states[0].copy_(rollouts.states[-1])
+    rollouts.states1[0].copy_(rollouts.states1[-1])
+    rollouts.states2[0].copy_(rollouts.states2[-1])
 
     if num_updates % args.log_interval == 0:
         print("Updates {}, num frames {}, mean/median reward {:.1f}/{:.1f}, min/max reward {:.1f}/{:.1f}, entropy {:.5f}, value loss {:.5f}, policy loss {:.5f}".
@@ -290,28 +288,37 @@ def ppo_update(num_updates, rollouts, final_rewards):
 
 
 def train():
-    rollouts = RolloutStorage(args.num_steps, args.num_processes, obs_shape, envs.action_space)
-    current_state = torch.zeros(args.num_processes, *obs_shape)
+    rollouts = RolloutStorage(args.num_steps, args.num_processes, img_obs_shape, joint_obs_shape, envs.action_space)
+    current_state1 = torch.zeros(args.num_processes, *img_obs_shape)
+    current_state2 = torch.zeros(args.num_processes, *joint_obs_shape)
 
-    def update_current_state(state):
-        shape_dim0 = envs.observation_space.shape[0]
-        state = torch.from_numpy(state).float()
+    def update_current_state(state1, state2):
+        shape_dim0_1 = envs.observation_space.spaces[0].shape[0]
+        shape_dim0_2 = envs.observation_space.spaces[1].shape[0]
+        state1 = torch.from_numpy(state1).float()
+        # print ("S1: ", state1.size())
+        state2 = torch.from_numpy(state2).float()
         if args.num_stack > 1:
-            # print (current_state.size())
-            current_state[:, :-shape_dim0] = current_state[:, shape_dim0:]
-        current_state[:, -shape_dim0:] = state
+            current_state1[:, :-shape_dim0_1] = current_state1[:, shape_dim0_1:]
+        # print (current_state1.size(), state1.size())
+        current_state1[:, -shape_dim0_1:] = state1
+        current_state2[:, -shape_dim0_2:] = state2
 
-    state = envs.reset()
-    update_current_state(state)
+    state = list(map(np.array, zip(*envs.reset())))
+    render, joints = state
 
-    rollouts.states[0].copy_(current_state)
+    update_current_state(render, joints)
+
+    rollouts.states1[0].copy_(current_state1)
+    rollouts.states2[0].copy_(current_state2)
 
     # These variables are used to compute average rewards for all processes.
     episode_rewards = torch.zeros([args.num_processes, 1])
     final_rewards = torch.zeros([args.num_processes, 1])
 
     if args.cuda:
-        current_state = current_state.cuda()
+        current_state1 = current_state1.cuda()
+        current_state2 = current_state2.cuda()
         rollouts.cuda()
 
     for num_update in count(1):
@@ -323,7 +330,8 @@ def train():
 
             # Sample actions
             # print ("data: ", rollouts.states[step].size())
-            value, action = actor_critic.act(Variable(rollouts.states[step], volatile=True))
+            value, action = actor_critic.act(Variable(rollouts.states1[step], volatile=True),
+                                             Variable(rollouts.states2[step], volatile=True))
             # print ("val, act: ", value.size(), action.size())
             cpu_actions = action.data.cpu().numpy()
 
@@ -331,6 +339,8 @@ def train():
             state, reward, done, info = envs.step(cpu_actions)
             reward = torch.from_numpy(np.expand_dims(np.stack(reward), 1)).float()
             episode_rewards += reward
+            state = list(map(np.array, zip(*state)))
+            state1, state2 = state
 
             # compute bonuses
             if args.imle or args.vime:
@@ -357,17 +367,21 @@ def train():
             if args.cuda:
                 masks = masks.cuda()
 
-            if current_state.dim() == 4:
-                current_state *= masks.unsqueeze(2).unsqueeze(2)
+            if current_state1.dim() == 4:
+                current_state1 *= masks.unsqueeze(2).unsqueeze(2)
             else:
-                current_state *= masks
+                current_state1 *= masks
+            if current_state2.dim() == 4:
+                current_state2 *= masks.unsqueeze(2).unsqueeze(2)
+            else:
+                current_state2 *= masks
 
-            update_current_state(state)
+            update_current_state(state1, state2)
 
             if args.render:
                 env.render()
 
-            rollouts.insert(step, current_state, action.data, value.data, reward, bonuses, masks)
+            rollouts.insert(step, current_state1, current_state2, action.data, value.data, reward, bonuses, masks)
 
             if args.imle or args.vime:
                 # add unnormalized bonus to memory for prioritization
@@ -381,7 +395,8 @@ def train():
                     #     bonuses.append(bonuses[-1])
             step += 1
 
-        next_value = actor_critic(Variable(rollouts.states[-1], volatile=True))[0].data
+        next_value = actor_critic(Variable(rollouts.states1[-1], volatile=True),
+                                  Variable(rollouts.states2[-1], volatile=True))[0].data
 
         if hasattr(actor_critic, 'obs_filter'):
             actor_critic.obs_filter.update(rollouts.states[:-1].view(-1, *obs_shape))
