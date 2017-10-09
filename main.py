@@ -30,7 +30,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--env-name', type=str, default='AcrobotContinuousVisionX-v0', help='Env to train.')
 parser.add_argument('--n-iter', type=int, default=250, help='Num iters')
 parser.add_argument('--max-episode-steps', type=int, default=500, help='Max num ep steps')
-parser.add_argument('--max-replay-size', type=int, default=100000, help='Max num samples to store in replay memory')
+parser.add_argument('--max-replay-size', type=int, default=1000, help='Max num samples to store in replay memory')
 parser.add_argument('--render', action='store_true', help='Render env observations')
 parser.add_argument('--vime', action='store_true', help='Do VIME update')
 parser.add_argument('--imle', action='store_true', help='Do IMLE update')
@@ -87,8 +87,8 @@ torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 
 print (envs.observation_space.spaces)
-joint_obs_shape = envs.observation_space.spaces[1].shape
 img_obs_shape = envs.observation_space.spaces[0].shape
+joint_obs_shape = envs.observation_space.spaces[1].shape
 
 if len(img_obs_shape) > 1:
     img_obs_shape = (img_obs_shape[0] * args.num_stack, *img_obs_shape[1:])
@@ -102,20 +102,20 @@ else:
 action_shape = envs.action_space.shape[0]
 
 if args.vime:
-    num_inputs = envs.observation_space.shape[0]
+    # num_inputs = envs.observation_space.shape[0]
     num_model_inputs = num_inputs
-    num_actions = envs.action_space.shape[0]
+    # num_actions = envs.action_space.shape[0]
 elif args.imle:
-    num_inputs = envs.observation_space.shape[0]
+    # num_inputs = envs.observation_space.shape[0]
     num_model_inputs = 512
-    num_actions = envs.action_space.shape[0]
+    # num_actions = envs.action_space.shape[0]
 
 if args.imle or args.vime:
     memory = replay_memory.Memory(args.max_replay_size,
-                                  envs.observation_space.shape,
+                                  img_obs_shape, joint_obs_shape,
                                   envs.action_space.shape[0])
     # print (num_inputs, num_actions)
-    dynamics = bnn.BNN(num_model_inputs+1, num_model_inputs, lr=args.bnn_lr, n_samples=args.bnn_n_samples)
+    dynamics = bnn.BNN(num_model_inputs+action_shape, num_model_inputs, lr=args.bnn_lr, n_samples=args.bnn_n_samples)
     kl_mean = deque(maxlen=args.kl_q_len)
     kl_std = deque(maxlen=args.kl_q_len)
     kl_previous = deque(maxlen=args.kl_q_len)
@@ -127,18 +127,23 @@ if args.cuda:
 old_model = copy.deepcopy(actor_critic)
 optimizer = optim.Adam(actor_critic.parameters(), args.lr, eps=args.eps)
 
-def compute_bnn_accuracy(inputs, actions, targets, encode=False):
+def compute_bnn_accuracy(inputs1, inputs2, actions, targets1, targets2, encode=False):
     acc = 0.
-    for inp, act, tar in zip(inputs, actions, targets):
+    for inp1, inp2, act, tar1, tar2 in zip(inputs1, inputs2, actions, targets1, targets2):
         if encode:
-            inp_var = Variable(torch.from_numpy(inp))
-            tar_var = Variable(torch.from_numpy(tar))
+            inp_var1 = Variable(torch.from_numpy(inp1))
+            inp_var2 = Variable(torch.from_numpy(inp2))
+            tar_var1 = Variable(torch.from_numpy(tar1))
+            tar_var2 = Variable(torch.from_numpy(tar2))
             if args.cuda:
-                inp_var = inp_var.cuda()
-                tar_var = tar_var.cuda()
-            inp_feat = actor_critic.encode(inp_var).data.cpu().numpy()
+                inp_var1 = inp_var1.cuda()
+                inp_var2 = inp_var2.cuda()
+                tar_var1 = tar_var1.cuda()
+                tar_var2 = tar_var2.cuda()
+
+            inp_feat = actor_critic.encode(inp_var1, inp_var2).data.cpu().numpy()
             # print ("Inp feat: ", inp_feat.shape)
-            tar_feat = actor_critic.encode(tar_var).data.cpu().numpy()
+            tar_feat = actor_critic.encode(tar_var1, tar_var2).data.cpu().numpy()
             input_dat = np.hstack([inp_feat.reshape(inp_feat.shape[0], -1), act])
             # print ("inp dat:", input_dat.shape)
             target_dat = tar_feat.reshape(tar_feat.shape[0], -1)
@@ -149,7 +154,7 @@ def compute_bnn_accuracy(inputs, actions, targets, encode=False):
         _out = dynamics.forward(Variable(torch.from_numpy(input_dat)).float())
         _out = _out.data.cpu().numpy()
         acc += np.mean(np.square(_out - target_dat.reshape(target_dat.shape[0], np.prod(target_dat.shape[1:])) ))
-    acc /= len(inputs)
+    acc /= len(inputs1)
     return acc
 
 def vime_bnn_update(inputs, actions, targets):
@@ -178,43 +183,58 @@ def vime_bnn_bonus(obs, act, next_obs):
     # dynamics.reset_to_old_params()
     return bonus
 
-def imle_bnn_update(inputs, actions, targets):
+def imle_bnn_update(inputs1, inputs2, actions, targets1, targets2):
     """ Main difference is that we first compute the feature representation
     given the states and then concat the action before training """
     print ("IMLE BNN update")
-    print ("Old BNN accuracy: ", compute_bnn_accuracy(inputs, actions, targets, encode=True))
-    for inp, act, tar in zip(inputs, actions, targets):
-        inp_var = Variable(torch.from_numpy(inp))
-        tar_var = Variable(torch.from_numpy(tar))
+    print ("Old BNN accuracy: ", compute_bnn_accuracy(inputs1, inputs2, actions, targets1, targets2, encode=True))
+    for inp1, inp2, act, tar1, tar2 in zip(inputs1, inputs2, actions, targets1, targets2):
+        inp_var1 = Variable(torch.from_numpy(inp1))
+        inp_var2 = Variable(torch.from_numpy(inp2))
+        tar_var1 = Variable(torch.from_numpy(tar1))
+        tar_var2 = Variable(torch.from_numpy(tar2))
         if args.cuda:
-            inp_var = inp_var.cuda()
-            tar_var = tar_var.cuda()
+            inp_var1 = inp_var1.cuda()
+            inp_var2 = inp_var2.cuda()
+            tar_var1 = tar_var1.cuda()
+            tar_var2 = tar_var2.cuda()
 
-        inp_feat = actor_critic.encode(inp_var).data.cpu().numpy()
+        inp_feat = actor_critic.encode(inp_var1, inp_var2).data.cpu().numpy()
         # print ("Inp feat: ", inp_feat.shape)
-        tar_feat = actor_critic.encode(tar_var).data.cpu().numpy()
+        tar_feat = actor_critic.encode(tar_var1, tar_var2).data.cpu().numpy()
         input_dat = np.hstack([inp_feat.reshape(inp_feat.shape[0], -1), act])
         # print ("inp dat:", input_dat.shape)
         target_dat = tar_feat.reshape(tar_feat.shape[0], -1)
         dynamics.train(input_dat, target_dat, use_cuda=args.cuda)
-    print ("New BNN accuracy: ", compute_bnn_accuracy(inputs, actions, targets, encode=True))
+    print ("New BNN accuracy: ", compute_bnn_accuracy(inputs1, inputs2, actions, targets1, targets2, encode=True))
 
 
-def imle_bnn_bonus(obs, act, next_obs):
+def imle_bnn_bonus(obs1, obs2, act, next_obs1, next_obs2):
     """ Very similar to VIME. Look at infogain in feature space model """
-    # print ("Computing VIME bonus: ", obs.shape, act.shape, next_obs.shape)
-    obs = obs[np.newaxis,:]
+    # print ("Computing VIME bonus: ", obs1.shape, obs2.shape, act.shape, next_obs1.shape, next_obs2.shape)
+
+    obs1 = obs1[np.newaxis,:]
+    # print (obs1.shape)
+    obs2 = obs2[np.newaxis,:]
     act = act[np.newaxis,:]
+    next_obs1 = next_obs1[np.newaxis,:]
+    # print (next_obs1.shape)
+    next_obs2 = next_obs2[np.newaxis,:]
 
     # unpacking var ensures gradients not passed
-    obs_input = Variable(torch.from_numpy(obs)).float()
-    next_obs_input = Variable(torch.from_numpy(next_obs)).float()
-    if args.cuda:
-        obs_input = obs_input.cuda()
-        next_obs_input = next_obs_input.cuda()
+    obs_input1 = Variable(torch.from_numpy(obs1)).float()
+    obs_input2 = Variable(torch.from_numpy(obs2)).float()
+    next_obs_input1 = Variable(torch.from_numpy(next_obs1)).float()
+    next_obs_input2 = Variable(torch.from_numpy(next_obs2)).float()
 
-    obs_feat = actor_critic.encode(obs_input).data.cpu().numpy()
-    next_obs_feat = actor_critic.encode(next_obs_input).data.cpu().numpy()
+    if args.cuda:
+        obs_input1 = obs_input1.cuda()
+        obs_input2 = obs_input2.cuda()
+        next_obs_input1 = next_obs_input1.cuda()
+        next_obs_input2 = next_obs_input2.cuda()
+
+    obs_feat = actor_critic.encode(obs_input1, obs_input2).data.cpu().numpy()
+    next_obs_feat = actor_critic.encode(next_obs_input1, next_obs_input2).data.cpu().numpy()
 
     # print ("Computing VIME bonus: ", obs.shape, act.shape, next_obs.shape)
     inputs = np.hstack([obs_feat, act])
@@ -330,6 +350,7 @@ def train():
 
             # Sample actions
             # print ("data: ", rollouts.states[step].size())
+
             value, action = actor_critic.act(Variable(rollouts.states1[step], volatile=True),
                                              Variable(rollouts.states2[step], volatile=True))
             # print ("val, act: ", value.size(), action.size())
@@ -342,30 +363,14 @@ def train():
             state = list(map(np.array, zip(*state)))
             state1, state2 = state
 
-            # compute bonuses
-            if args.imle or args.vime:
-                bonuses = []
-                for i in range(args.num_processes):
-                    bonus = 0
-                    if len(memory) >= args.min_replay_size:
-                        # compute reward bonuses
-                        if args.vime:
-                            bonus = vime_bnn_bonus(rollouts.states[step][i].cpu().numpy(), cpu_actions[i], state[i])
-                        elif args.imle:
-                            bonus = imle_bnn_bonus(rollouts.states[step][i].cpu().numpy(), cpu_actions[i], state[i])
-                    bonuses.append(bonus)
-                bonuses = torch.from_numpy(np.array(bonuses)).unsqueeze(1)
-            else:
-                bonuses = torch.zeros(reward.size())
+            last_state1 = current_state1.cpu().numpy() #rollouts.states1[step][i].cpu().numpy()
+            last_state2 = current_state2.cpu().numpy() #rollouts.states2[step][i].cpu().numpy()
 
             # If done then clean the history of observations.
             masks = torch.FloatTensor([[0.0] if done_ else [1.0] for done_ in done])
             final_rewards *= masks
             final_rewards += (1 - masks) * episode_rewards
             episode_rewards *= masks
-
-            if args.cuda:
-                masks = masks.cuda()
 
             if current_state1.dim() == 4:
                 current_state1 *= masks.unsqueeze(2).unsqueeze(2)
@@ -375,8 +380,35 @@ def train():
                 current_state2 *= masks.unsqueeze(2).unsqueeze(2)
             else:
                 current_state2 *= masks
-
             update_current_state(state1, state2)
+
+
+            # compute bonuses
+            if args.imle or args.vime:
+                bonuses = []
+                for i in range(args.num_processes):
+                    bonus = 0
+                    if len(memory) >= args.min_replay_size:
+                        # compute reward bonuses
+                        if args.vime:
+                            bonus = vime_bnn_bonus(last_state1[i],
+                                                   last_state2[i],
+                                                   cpu_actions[i],
+                                                   current_state1[i].cpu().numpy(),
+                                                   current_state2[i].cpu().numpy())
+                        elif args.imle:
+                            bonus = imle_bnn_bonus(last_state1[i],
+                                                   last_state2[i],
+                                                   cpu_actions[i],
+                                                   current_state1[i].cpu().numpy(),
+                                                   current_state2[i].cpu().numpy())
+                    bonuses.append(bonus)
+                bonuses = torch.from_numpy(np.array(bonuses)).unsqueeze(1)
+            else:
+                bonuses = torch.zeros(reward.size())
+
+            if args.cuda:
+                masks = masks.cuda()
 
             if args.render:
                 env.render()
@@ -386,7 +418,9 @@ def train():
             if args.imle or args.vime:
                 # add unnormalized bonus to memory for prioritization
                 for i in range(args.num_processes):
-                    memory.add_sample(current_state[i].cpu().numpy(),
+                    # print ("Test!")
+                    memory.add_sample(current_state1[i].cpu().numpy(),
+                                      current_state2[i].cpu().numpy(),
                                       action[i].data.cpu().numpy(),
                                       reward[i].cpu().numpy(),
                                       1-masks[i].cpu().numpy())
@@ -419,25 +453,30 @@ def train():
         do_exit = ppo_update(num_update, rollouts, final_rewards)
 
         # do bnn update if memory is large enough
+        print ("Memory size: ", len(memory))
         if (args.imle or args.vime) and memory.size >= args.min_replay_size and num_update % 5 == 0:
             print ("Updating BNN")
-            obs_mean, obs_std, act_mean, act_std = memory.mean_obs_act()
-            _inputss, _targetss, _actionss = [], [], []
+            obs_mean1, obs_std1, obs_mean2, obs_std2, act_mean, act_std = memory.mean_obs_act()
+            _inputss1, _inputss2, _targetss1, _targetss2, _actionss = [], [], [], [], []
             for _ in range(args.bnn_n_updates_per_step):
                 batch = memory.sample(args.bnn_batch_size)
-                obs_data = (batch['observations'] - obs_mean) / (obs_std + 1e-8)
-                next_obs_data = (batch['next_observations'] - obs_mean) / (obs_std + 1e-8)
+                obs_data1 = (batch['observations1'] - obs_mean1) / (obs_std1 + 1e-8)
+                obs_data2 = (batch['observations2'] - obs_mean2) / (obs_std2 + 1e-8)
+                next_obs_data1 = (batch['next_observations1'] - obs_mean1) / (obs_std1 + 1e-8)
+                next_obs_data2 = (batch['next_observations2'] - obs_mean2) / (obs_std2 + 1e-8)
                 act_data = (batch['actions'] - act_mean) / (act_std + 1e-8)
 
-                _inputss.append(obs_data)
-                _targetss.append(next_obs_data)
+                _inputss1.append(obs_data1)
+                _inputss2.append(obs_data2)
+                _targetss1.append(next_obs_data1)
+                _targetss2.append(next_obs_data2)
                 _actionss.append(act_data)
 
             # update bnn
             if args.vime:
-                vime_bnn_update(_inputss, _actionss, _targetss)
+                vime_bnn_update(_inputss1, _inputss2, _actionss, _targetss1, _targetss2)
             elif args.imle:
-                imle_bnn_update(_inputss, _actionss, _targetss)
+                imle_bnn_update(_inputss1, _inputss2, _actionss, _targetss1, _targetss2)
 
         # save model
         torch.save(actor_critic, os.path.join(args.log_dir, 'model'+str(num_update)+'.pth'))
