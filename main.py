@@ -35,6 +35,7 @@ parser.add_argument('--render', action='store_true', help='Render env observatio
 parser.add_argument('--vime', action='store_true', help='Do VIME update')
 parser.add_argument('--imle', action='store_true', help='Do IMLE update')
 parser.add_argument('--shared-actor-critic', action='store_true', help='Whether to share params between pol and val in network')
+parser.add_argument('--max-num-updates', type=int, default=1000, help='max num update steps to run')
 # PPO args
 parser.add_argument('--lr', type=float, default=7e-4, help='learning rate (default: 7e-4)')
 parser.add_argument('--eps', type=float, default=1e-5, help='RMSprop optimizer epsilon (default: 1e-5)')
@@ -108,15 +109,18 @@ if args.vime:
     num_actions = envs.action_space.shape[0]
 elif args.imle:
     num_inputs = envs.observation_space.shape[0]
-    num_model_inputs = 512
+    if len(obs_shape) > 1:
+        num_model_inputs = 512 # TODO: FIXME so no automatically finds encoded shape from model
+    else:
+        num_model_inputs = 64
     num_actions = envs.action_space.shape[0]
 
 if args.imle or args.vime:
     memory = replay_memory.Memory(args.max_replay_size,
-                                  envs.observation_space.shape,
+                                  obs_shape, #nvs.observation_space.shape,
                                   envs.action_space.shape[0])
     # print (num_inputs, num_actions)
-    dynamics = bnn.BNN(num_model_inputs+1, num_model_inputs, lr=args.bnn_lr, n_samples=args.bnn_n_samples)
+    dynamics = bnn.BNN(num_model_inputs+num_actions, num_model_inputs, lr=args.bnn_lr, n_samples=args.bnn_n_samples)
     kl_mean = deque(maxlen=args.kl_q_len)
     kl_std = deque(maxlen=args.kl_q_len)
     kl_previous = deque(maxlen=args.kl_q_len)
@@ -126,10 +130,7 @@ if args.cuda:
     # dynamics = dynamics.cuda()
 
 old_model = copy.deepcopy(actor_critic)
-
-
 optimizer = optim.Adam(actor_critic.parameters(), args.lr, eps=args.eps)
-
 
 def compute_bnn_accuracy(inputs, actions, targets, encode=False):
     acc = 0.
@@ -209,6 +210,7 @@ def imle_bnn_bonus(obs, act, next_obs):
     # print ("Computing VIME bonus: ", obs.shape, act.shape, next_obs.shape)
     obs = obs[np.newaxis,:]
     act = act[np.newaxis,:]
+    next_obs = next_obs[np.newaxis,:]
 
     # unpacking var ensures gradients not passed
     obs_input = Variable(torch.from_numpy(obs)).float()
@@ -218,6 +220,8 @@ def imle_bnn_bonus(obs, act, next_obs):
         next_obs_input = next_obs_input.cuda()
 
     obs_feat = actor_critic.encode(obs_input).data.cpu().numpy()
+    # print ("next_obs_input: ", next_obs_input.size())
+    # input("")
     next_obs_feat = actor_critic.encode(next_obs_input).data.cpu().numpy()
 
     # print ("Computing VIME bonus: ", obs.shape, act.shape, next_obs.shape)
@@ -282,6 +286,8 @@ def ppo_update(num_updates, rollouts, final_rewards):
                    value_loss.data[0], action_loss.data[0]))
         if final_rewards.mean() == 1.0: #Then have solved env
             return True
+    if num_updates > args.max_num_updates:
+        return True
     return False
 
     # if num_updates % args.vis_interval == 0:
@@ -332,21 +338,7 @@ def train():
             reward = torch.from_numpy(np.expand_dims(np.stack(reward), 1)).float()
             episode_rewards += reward
 
-            # compute bonuses
-            if args.imle or args.vime:
-                bonuses = []
-                for i in range(args.num_processes):
-                    bonus = 0
-                    if len(memory) >= args.min_replay_size:
-                        # compute reward bonuses
-                        if args.vime:
-                            bonus = vime_bnn_bonus(rollouts.states[step][i].cpu().numpy(), cpu_actions[i], state[i])
-                        elif args.imle:
-                            bonus = imle_bnn_bonus(rollouts.states[step][i].cpu().numpy(), cpu_actions[i], state[i])
-                    bonuses.append(bonus)
-                bonuses = torch.from_numpy(np.array(bonuses)).unsqueeze(1)
-            else:
-                bonuses = torch.zeros(reward.size())
+            last_state = current_state.cpu().numpy()
 
             # If done then clean the history of observations.
             masks = torch.FloatTensor([[0.0] if done_ else [1.0] for done_ in done])
@@ -363,6 +355,22 @@ def train():
                 current_state *= masks
 
             update_current_state(state)
+
+            # compute bonuses
+            if args.imle or args.vime:
+                bonuses = []
+                for i in range(args.num_processes):
+                    bonus = 0
+                    if len(memory) >= args.min_replay_size:
+                        # compute reward bonuses
+                        if args.vime:
+                            bonus = vime_bnn_bonus(last_state[i], cpu_actions[i], current_state[i].cpu().numpy())
+                        elif args.imle:
+                            bonus = imle_bnn_bonus(last_state[i], cpu_actions[i], current_state[i].cpu().numpy())
+                    bonuses.append(bonus)
+                bonuses = torch.from_numpy(np.array(bonuses)).unsqueeze(1)
+            else:
+                bonuses = torch.zeros(reward.size())
 
             if args.render:
                 env.render()
@@ -426,6 +434,10 @@ def train():
 
         # save model
         torch.save(actor_critic, os.path.join(args.log_dir, 'model'+str(num_update)+'.pth'))
+        if (args.vime or args.imle):
+            import joblib
+            torch.save(dynamics, os.path.join(args.log_dir, 'bnn'+str(num_update)+'.pth'))
+            joblib.dump(memory, os.path.join(args.log_dir, 'memory.npy'))
         if do_exit:
             envs.close()
             return
