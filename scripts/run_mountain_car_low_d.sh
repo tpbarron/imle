@@ -3,11 +3,11 @@ LOG_DIR="/media/trevor/22c63957-b0cc-45b6-9d8f-173d9619fb73/outputs/imle/";
 DEFAULT_ARGS="--num-processes 8 --num-steps 20 --batch-size 160"
 
 # vime baselines
-for i in 1 2 3 4 5
-do
-  mkdir -p "${LOG_DIR}vime_baseline/mountaincar_continuous_x/${i}/"
-  python main.py $DEFAULT_ARGS --vime --seed $i --log-dir "${LOG_DIR}vime_baseline/mountaincar_continuous_x/${i}/" --env-name "MountainCarContinuousX-v0" | tee  "${LOG_DIR}vime_baseline/mountaincar_continuous_x/${i}/out.log"
-done
+# for i in 1 2 3 4 5
+# do
+#   mkdir -p "${LOG_DIR}vime_baseline/mountaincar_continuous_x/${i}/"
+#   python main.py $DEFAULT_ARGS --vime --seed $i --log-dir "${LOG_DIR}vime_baseline/mountaincar_continuous_x/${i}/" --env-name "MountainCarContinuousX-v0" | tee  "${LOG_DIR}vime_baseline/mountaincar_continuous_x/${i}/out.log"
+# done
 
 # imle comparison
 for i in 1 2 3 4 5
