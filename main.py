@@ -30,11 +30,11 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--env-name', type=str, default='AcrobotContinuousVisionX-v0', help='Env to train.')
 parser.add_argument('--n-iter', type=int, default=250, help='Num iters')
 parser.add_argument('--max-episode-steps', type=int, default=500, help='Max num ep steps')
-parser.add_argument('--max-replay-size', type=int, default=1000, help='Max num samples to store in replay memory')
 parser.add_argument('--render', action='store_true', help='Render env observations')
 parser.add_argument('--vime', action='store_true', help='Do VIME update')
 parser.add_argument('--imle', action='store_true', help='Do IMLE update')
 parser.add_argument('--shared-actor-critic', action='store_true', help='Whether to share params between pol and val in network')
+
 # PPO args
 parser.add_argument('--lr', type=float, default=7e-4, help='learning rate (default: 7e-4)')
 parser.add_argument('--eps', type=float, default=1e-5, help='RMSprop optimizer epsilon (default: 1e-5)')
@@ -50,6 +50,7 @@ parser.add_argument('--clip-param', type=float, default=0.2, help='ppo clip para
 parser.add_argument('--entropy-coef', type=float, default=0.01, help='entropy term coefficient (default: 0.01)')
 parser.add_argument('--value-loss-coef', type=float, default=0.5, help='value loss coefficient (default: 0.5)')
 parser.add_argument('--max-grad-norm', type=float, default=0.5, help='value loss coefficient (default: 0.5)')
+parser.add_argument('--max-num-updates', type=int, default=1000, help='Num update steps to run')
 parser.add_argument('--seed', type=int, default=1, help='random seed (default: 1)')
 
 # BNN args
@@ -59,6 +60,7 @@ parser.add_argument('--bnn-batch-size', type=int, default=32, help='batch size f
 parser.add_argument('--bnn-lr', type=float, default=0.0001, help='lr for bnn updates')
 parser.add_argument('--eta', type=float, default=0.0001, help='param balancing exploitation / explr')
 parser.add_argument('--min-replay-size', type=int, default=500, help='Min replay size for update')
+parser.add_argument('--max-replay-size', type=int, default=1000, help='Max num samples to store in replay memory')
 parser.add_argument('--kl-q-len', type=int, default=10, help='Past KL queue size used for normalization')
 
 #
@@ -298,13 +300,12 @@ def ppo_update(num_updates, rollouts, final_rewards):
                    final_rewards.min(),
                    final_rewards.max(), -dist_entropy.data[0],
                    value_loss.data[0], action_loss.data[0]))
-        if final_rewards.mean() == 1.0: #Then have solved env
-            return True
+        # if final_rewards.mean() == 1.0: #Then have solved env
+        #     return True
     return False
 
     # if num_updates % args.vis_interval == 0:
     #     win = visdom_plot(viz, win, args.log_dir, args.env_name, args.algo)
-
 
 
 def train():
@@ -346,11 +347,6 @@ def train():
         bonuses = []
 
         while step < args.num_steps:
-            # episode_step += 1
-
-            # Sample actions
-            # print ("data: ", rollouts.states[step].size())
-
             value, action = actor_critic.act(Variable(rollouts.states1[step], volatile=True),
                                              Variable(rollouts.states2[step], volatile=True))
             # print ("val, act: ", value.size(), action.size())
@@ -372,6 +368,8 @@ def train():
             final_rewards += (1 - masks) * episode_rewards
             episode_rewards *= masks
 
+            if args.cuda:
+                masks = masks.cuda()
             if current_state1.dim() == 4:
                 current_state1 *= masks.unsqueeze(2).unsqueeze(2)
             else:
@@ -381,7 +379,6 @@ def train():
             else:
                 current_state2 *= masks
             update_current_state(state1, state2)
-
 
             # compute bonuses
             if args.imle or args.vime:
@@ -406,9 +403,6 @@ def train():
                 bonuses = torch.from_numpy(np.array(bonuses)).unsqueeze(1)
             else:
                 bonuses = torch.zeros(reward.size())
-
-            if args.cuda:
-                masks = masks.cuda()
 
             if args.render:
                 env.render()
@@ -453,8 +447,8 @@ def train():
         do_exit = ppo_update(num_update, rollouts, final_rewards)
 
         # do bnn update if memory is large enough
-        print ("Memory size: ", len(memory))
         if (args.imle or args.vime) and memory.size >= args.min_replay_size and num_update % 5 == 0:
+            print ("Memory size: ", len(memory))
             print ("Updating BNN")
             obs_mean1, obs_std1, obs_mean2, obs_std2, act_mean, act_std = memory.mean_obs_act()
             _inputss1, _inputss2, _targetss1, _targetss2, _actionss = [], [], [], [], []
@@ -479,7 +473,15 @@ def train():
                 imle_bnn_update(_inputss1, _inputss2, _actionss, _targetss1, _targetss2)
 
         # save model
+        print ("path: ", os.path.join(args.log_dir, 'model'+str(num_update)+'.pth'))
         torch.save(actor_critic, os.path.join(args.log_dir, 'model'+str(num_update)+'.pth'))
+        if (args.imle or args.vime):
+            torch.save(dynamics, os.path.join(args.log_dir, 'bnn'+str(num_update)+'.pth'))
+            np.save(os.path.join(args.log_dir, 'latest_replay.npy'))
+
+        if num_update > args.max_num_updates:
+            do_exit = True
+
         if do_exit:
             envs.close()
             return
