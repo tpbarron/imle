@@ -1,5 +1,5 @@
-
-LOG_DIR="/home/users/tbarron/Documents/dev/ml/data/outputs/imle/";
+LOG_DIR="/media/trevor/22c63957-b0cc-45b6-9d8f-173d9619fb73/outputs/imle/";
+# LOG_DIR="/home/users/tbarron/Documents/dev/ml/data/outputs/imle/";
 DEFAULT_ARGS="--num-processes 8 --num-steps 20 --batch-size 160"
 
 # vime baselines
