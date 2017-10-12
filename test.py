@@ -15,12 +15,16 @@
 
 
 import gym
-import roboschool
-import roboschool_x
+# import pybullet_envs
+import gym_x
 
-env = gym.make('RoboschoolAntPlain-v0')
-# env = gym.make('RoboschoolHumanoidFlagrunHarderX-v0')
-while True:
+# env = gym.make('Walker2DBulletX-v0')
+env = gym.make('Walker2DVisionBulletX-v0')
+# env = gym.make('ChainX-v0')
+# env = gym.make('ChainVisionX-v0')
+
+env.render(mode='human')
+for i in range(10):
     i = 0
     obs = env.reset()
     done = False
@@ -28,3 +32,4 @@ while True:
         env.render()
         obs, rew, done, info = env.step(env.action_space.sample())
         i += 1
+env.close()

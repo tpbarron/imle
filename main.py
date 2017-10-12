@@ -1,6 +1,7 @@
 import argparse
 from collections import deque
 from itertools import count
+import csv
 import copy
 import os
 import sys
@@ -11,6 +12,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.autograd import Variable
 from torch.utils.data.sampler import BatchSampler, SubsetRandomSampler
+torch.set_default_tensor_type('torch.FloatTensor')
 
 # ppo imports
 from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
@@ -18,12 +20,9 @@ from envs import make_env
 from model import *
 from storage import RolloutStorage
 
-torch.set_default_tensor_type('torch.FloatTensor')
-
-# import models
 import replay_memory
-# import actor_critic
 import bnn
+import pybullet_envs
 import gym_x
 
 parser = argparse.ArgumentParser()
@@ -78,6 +77,24 @@ os.makedirs(args.log_dir, exist_ok=True)
 
 assert not (args.vime and args.imle), "Cannot do both VIME and IMLE"
 
+# setup csv logging
+csvfile = open(os.path.join(args.log_dir, 'data.csv'), 'w')
+fields = ['updates',
+          'frames',
+          'mean_reward',
+          'median_reward',
+          'min_reward',
+          'max_reward',
+          'pol_entropy',
+          'value_loss',
+          'policy_loss',
+          'raw_kls',
+          'scaled_kls',
+          'bonuses']
+csvwriter = csv.DictWriter(csvfile, fieldnames=fields)
+csvwriter.writeheader()
+csvfile.flush()
+
 # NOTE: in case someone is searching, this wrapper will also reset the envs when done
 envs = SubprocVecEnv([
     make_env(args.env_name, args.seed, i, args.log_dir)
@@ -126,10 +143,7 @@ if args.cuda:
     # dynamics = dynamics.cuda()
 
 old_model = copy.deepcopy(actor_critic)
-
-
 optimizer = optim.Adam(actor_critic.parameters(), args.lr, eps=args.eps)
-
 
 def compute_bnn_accuracy(inputs, actions, targets, encode=False):
     acc = 0.
@@ -281,8 +295,8 @@ def ppo_update(num_updates, rollouts, final_rewards):
                    final_rewards.max(), -dist_entropy.data[0],
                    value_loss.data[0], action_loss.data[0]))
         if final_rewards.mean() == 1.0: #Then have solved env
-            return True
-    return False
+            return True, (-dist_entropy.data[0], value_loss.data[0], action_loss.data[0])
+    return False, (-dist_entropy.data[0], value_loss.data[0], action_loss.data[0])
 
     # if num_updates % args.vis_interval == 0:
     #     win = visdom_plot(viz, win, args.log_dir, args.env_name, args.algo)
@@ -386,22 +400,42 @@ def train():
         if hasattr(actor_critic, 'obs_filter'):
             actor_critic.obs_filter.update(rollouts.states[:-1].view(-1, *obs_shape))
 
+        raw_kls = 0.0
+        scaled_kls = 0.0
+        bonuses = 0.0
         if args.imle or args.vime:
             # normalize bonuses
-            kl_previous.append(rollouts.bonuses.median()) #np.median(bonuses))
+            raw_kls = rollouts.bonuses.cpu().numpy().tolist()
+            kl_previous.append(rollouts.bonuses.median())
             previous_mean_kl = np.mean(np.asarray(kl_previous))
             if previous_mean_kl > 0:
                 # divide kls by previous_mean_kl
                 # for i in range(len(bonuses)):
                 #     bonuses[i] = bonuses[i] / previous_mean_kl
                 rollouts.bonuses.div_(previous_mean_kl)
+            scaled_kls = rollouts.bonuses.cpu().numpy().tolist()
+            bonuess = rollouts.bonuses.mul(args.eta).cpu().numpy().tolist()
             print ("Bonuses (no eta): (mean) ", rollouts.bonuses.mean(),
                    ", (std) ", rollouts.bonuses.std(),
                    ", Bonuses (w/ eta): (mean) ", rollouts.bonuses.mul(args.eta).mean(),
                    ", (std) ", rollouts.bonuses.mul(args.eta).std())
             rollouts.apply_bonuses(args.eta)
         rollouts.compute_returns(next_value, args.use_gae, args.gamma, args.tau)
-        do_exit = ppo_update(num_update, rollouts, final_rewards)
+        do_exit, (pol_entropy, value_loss, policy_loss) = ppo_update(num_update, rollouts, final_rewards)
+
+        csvwriter.writerow({'updates': num_update,
+                            'frames': num_update * args.num_processes * args.num_steps,
+                            'mean_reward': final_rewards.mean(),
+                            'median_reward': final_rewards.median(),
+                            'min_reward': final_rewards.min(),
+                            'max_reward': final_rewards.max(),
+                            'pol_entropy': pol_entropy,
+                            'value_loss': value_loss,
+                            'policy_loss': policy_loss,
+                            'raw_kls': raw_kls,
+                            'scaled_kls': scaled_kls,
+                            'bonuses': bonuses})
+        csvfile.flush()
 
         # do bnn update if memory is large enough
         if (args.imle or args.vime) and memory.size >= args.min_replay_size and num_update % 5 == 0:
