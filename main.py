@@ -7,6 +7,7 @@ import os
 import sys
 import gym
 import numpy as np
+import joblib
 import torch
 import torch.optim as optim
 import torch.nn.functional as F
@@ -78,6 +79,9 @@ os.makedirs(args.log_dir, exist_ok=True)
 
 assert not (args.vime and args.imle), "Cannot do both VIME and IMLE"
 
+# save args for reference
+joblib.dump(args, os.path.join(args.log_dir, 'args_snapshot.pkl'))
+
 # setup csv logging
 csvfile = open(os.path.join(args.log_dir, 'data.csv'), 'w')
 fields = ['updates',
@@ -91,7 +95,10 @@ fields = ['updates',
           'policy_loss',
           'raw_kls',
           'scaled_kls',
-          'bonuses']
+          'bonuses',
+          'replay_size',
+          'latest_pre_bnn_error',
+          'latest_post_bnn_error']
 csvwriter = csv.DictWriter(csvfile, fieldnames=fields)
 csvwriter.writeheader()
 csvfile.flush()
@@ -175,12 +182,15 @@ def compute_bnn_accuracy(inputs, actions, targets, encode=False):
     return acc
 
 def vime_bnn_update(inputs, actions, targets):
-    print ("Old BNN accuracy: ", compute_bnn_accuracy(inputs, actions, targets))
+    pre_acc = compute_bnn_accuracy(inputs, actions, targets)
+    print ("Old BNN accuracy: ", pre_acc)
     for inp, act, tar in zip(inputs, actions, targets):
         input_dat = np.hstack([inp.reshape(inp.shape[0], -1), act])
         target_dat = tar.reshape(tar.shape[0], -1)
         dynamics.train(input_dat, target_dat)
-    print ("New BNN accuracy: ", compute_bnn_accuracy(inputs, actions, targets))
+    post_acc = compute_bnn_accuracy(inputs, actions, targets)
+    print ("New BNN accuracy: ", post_acc)
+    return pre_acc, post_acc
 
 def vime_bnn_bonus(obs, act, next_obs):
     # print ("Computing VIME bonus: ", obs.shape, act.shape, next_obs.shape)
@@ -204,7 +214,8 @@ def imle_bnn_update(inputs, actions, targets):
     """ Main difference is that we first compute the feature representation
     given the states and then concat the action before training """
     print ("IMLE BNN update")
-    print ("Old BNN accuracy: ", compute_bnn_accuracy(inputs, actions, targets, encode=True))
+    pre_acc = compute_bnn_accuracy(inputs, actions, targets, encode=True)
+    print ("Old BNN accuracy: ", pre_acc)
     for inp, act, tar in zip(inputs, actions, targets):
         inp_var = Variable(torch.from_numpy(inp))
         tar_var = Variable(torch.from_numpy(tar))
@@ -219,8 +230,9 @@ def imle_bnn_update(inputs, actions, targets):
         # print ("inp dat:", input_dat.shape)
         target_dat = tar_feat.reshape(tar_feat.shape[0], -1)
         dynamics.train(input_dat, target_dat, use_cuda=args.cuda)
-    print ("New BNN accuracy: ", compute_bnn_accuracy(inputs, actions, targets, encode=True))
-
+    post_acc = compute_bnn_accuracy(inputs, actions, targets, encode=True)
+    print ("New BNN accuracy: ", post_acc)
+    return pre_acc, post_acc
 
 def imle_bnn_bonus(obs, act, next_obs):
     """ Very similar to VIME. Look at infogain in feature space model """
@@ -302,7 +314,9 @@ def ppo_update(num_updates, rollouts, final_rewards):
                    final_rewards.max(), -dist_entropy.data[0],
                    value_loss.data[0], action_loss.data[0]))
         if final_rewards.mean() == 1.0: #Then have solved env
-            if num_updates > args.max_num_updates:
+            return True, (-dist_entropy.data[0], value_loss.data[0], action_loss.data[0])
+
+    if num_updates > args.max_num_updates:
         return True, (-dist_entropy.data[0], value_loss.data[0], action_loss.data[0])
     return False, (-dist_entropy.data[0], value_loss.data[0], action_loss.data[0])
 
@@ -312,6 +326,7 @@ def ppo_update(num_updates, rollouts, final_rewards):
 
 
 def train():
+    pre_bnn_error, post_bnn_error = -1, -1
     rollouts = RolloutStorage(args.num_steps, args.num_processes, obs_shape, envs.action_space)
     current_state = torch.zeros(args.num_processes, *obs_shape)
 
@@ -424,7 +439,7 @@ def train():
                 #     bonuses[i] = bonuses[i] / previous_mean_kl
                 rollouts.bonuses.div_(previous_mean_kl)
             scaled_kls = rollouts.bonuses.cpu().numpy().tolist()
-            bonuess = rollouts.bonuses.mul(args.eta).cpu().numpy().tolist()
+            bonuses = rollouts.bonuses.mul(args.eta).cpu().numpy().tolist()
             print ("Bonuses (no eta): (mean) ", rollouts.bonuses.mean(),
                    ", (std) ", rollouts.bonuses.std(),
                    ", Bonuses (w/ eta): (mean) ", rollouts.bonuses.mul(args.eta).mean(),
@@ -432,20 +447,6 @@ def train():
             rollouts.apply_bonuses(args.eta)
         rollouts.compute_returns(next_value, args.use_gae, args.gamma, args.tau)
         do_exit, (pol_entropy, value_loss, policy_loss) = ppo_update(num_update, rollouts, final_rewards)
-
-        csvwriter.writerow({'updates': num_update,
-                            'frames': num_update * args.num_processes * args.num_steps,
-                            'mean_reward': final_rewards.mean(),
-                            'median_reward': final_rewards.median(),
-                            'min_reward': final_rewards.min(),
-                            'max_reward': final_rewards.max(),
-                            'pol_entropy': pol_entropy,
-                            'value_loss': value_loss,
-                            'policy_loss': policy_loss,
-                            'raw_kls': raw_kls,
-                            'scaled_kls': scaled_kls,
-                            'bonuses': bonuses})
-        csvfile.flush()
 
         # do bnn update if memory is large enough
         if (args.imle or args.vime) and memory.size >= args.min_replay_size and num_update % 5 == 0:
@@ -464,16 +465,38 @@ def train():
 
             # update bnn
             if args.vime:
-                vime_bnn_update(_inputss, _actionss, _targetss)
+                pre_bnn_error, post_bnn_error = vime_bnn_update(_inputss, _actionss, _targetss)
             elif args.imle:
-                imle_bnn_update(_inputss, _actionss, _targetss)
+                pre_bnn_error, post_bnn_error = imle_bnn_update(_inputss, _actionss, _targetss)
+
+        try:
+            replay_size = len(memory)
+        except:
+            replay_size = 0
+
+        csvwriter.writerow({'updates': num_update,
+                            'frames': num_update * args.num_processes * args.num_steps,
+                            'mean_reward': final_rewards.mean(),
+                            'median_reward': final_rewards.median(),
+                            'min_reward': final_rewards.min(),
+                            'max_reward': final_rewards.max(),
+                            'pol_entropy': pol_entropy,
+                            'value_loss': value_loss,
+                            'policy_loss': policy_loss,
+                            'raw_kls': raw_kls,
+                            'scaled_kls': scaled_kls,
+                            'bonuses': bonuses,
+                            'replay_size': replay_size,
+                            'latest_pre_bnn_error': pre_bnn_error,
+                            'latest_post_bnn_error': post_bnn_error})
+        csvfile.flush()
 
         # save model
         torch.save(actor_critic, os.path.join(args.log_dir, 'model'+str(num_update)+'.pth'))
         if (args.vime or args.imle):
             import joblib
             torch.save(dynamics, os.path.join(args.log_dir, 'bnn'+str(num_update)+'.pth'))
-            joblib.dump(memory, os.path.join(args.log_dir, 'memory.npy'))
+            joblib.dump(memory, os.path.join(args.log_dir, 'memory.pkl'))
         if do_exit:
             envs.close()
             return
