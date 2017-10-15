@@ -35,7 +35,7 @@ parser.add_argument('--render', action='store_true', help='Render env observatio
 parser.add_argument('--vime', action='store_true', help='Do VIME update')
 parser.add_argument('--imle', action='store_true', help='Do IMLE update')
 parser.add_argument('--shared-actor-critic', action='store_true', help='Whether to share params between pol and val in network')
-parser.add_argument('--max-num-updates', type=int, default=1000, help='max num update steps to run')
+# parser.add_argument('--max-num-updates', type=int, default=1000, help='max num update steps to run')
 # PPO args
 parser.add_argument('--lr', type=float, default=7e-4, help='learning rate (default: 7e-4)')
 parser.add_argument('--eps', type=float, default=1e-5, help='RMSprop optimizer epsilon (default: 1e-5)')
@@ -313,10 +313,10 @@ def ppo_update(num_updates, rollouts, final_rewards):
                    final_rewards.min(),
                    final_rewards.max(), -dist_entropy.data[0],
                    value_loss.data[0], action_loss.data[0]))
-        if final_rewards.mean() == 1.0: #Then have solved env
-            return True, (-dist_entropy.data[0], value_loss.data[0], action_loss.data[0])
+        # if final_rewards.mean() == 1.0: #Then have solved env
+        #     return True, (-dist_entropy.data[0], value_loss.data[0], action_loss.data[0])
 
-    if num_updates > args.max_num_updates:
+    if num_updates * args.num_processes * args.num_steps > args.num_frames:
         return True, (-dist_entropy.data[0], value_loss.data[0], action_loss.data[0])
     return False, (-dist_entropy.data[0], value_loss.data[0], action_loss.data[0])
 
@@ -324,6 +324,38 @@ def ppo_update(num_updates, rollouts, final_rewards):
     #     win = visdom_plot(viz, win, args.log_dir, args.env_name, args.algo)
 
 
+def run_eval_episodes(n):
+    env = gym.make(args.env_name)
+    current_state = torch.zeros(1, *obs_shape)
+
+    def update_current_state(state):
+        shape_dim0 = env.observation_space.shape[0]
+        state = torch.from_numpy(state).float()
+        if args.num_stack > 1:
+            current_state[:, :-shape_dim0] = current_state[:, shape_dim0:]
+        current_state[:, -shape_dim0:] = state
+
+    if args.cuda:
+        current_state = current_state.cuda()
+
+    rewards = []
+    for i in range(n):
+        done = False
+        ep_reward = 0.
+        step = 0
+        state = env.reset()
+        update_current_state(state)
+        while not done and step < args.max_episode_steps:
+            value, action = actor_critic.act(Variable(current_state, volatile=True), deterministic=True)
+            cpu_actions = action.data.cpu().numpy()
+            # Obser reward and next state
+            state, rew, done, _ = env.step(cpu_actions[0])
+            ep_reward += rew
+            update_current_state(state)
+            step += 1
+        rewards.append(ep_reward)
+    env.close()
+    return np.array(rewards)
 
 def train():
     pre_bnn_error, post_bnn_error = -1, -1
@@ -474,12 +506,17 @@ def train():
         except:
             replay_size = 0
 
+        if num_update % 5 == 0:
+            test_rewards = run_eval_episodes(10)
+        else:
+            test_rewards = np.array([-1])
+
         csvwriter.writerow({'updates': num_update,
                             'frames': num_update * args.num_processes * args.num_steps,
-                            'mean_reward': final_rewards.mean(),
-                            'median_reward': final_rewards.median(),
-                            'min_reward': final_rewards.min(),
-                            'max_reward': final_rewards.max(),
+                            'mean_reward': test_rewards.mean(),
+                            'median_reward': np.median(test_rewards),
+                            'min_reward': test_rewards.min(),
+                            'max_reward': test_rewards.max(),
                             'pol_entropy': pol_entropy,
                             'value_loss': value_loss,
                             'policy_loss': policy_loss,
@@ -490,13 +527,16 @@ def train():
                             'latest_pre_bnn_error': pre_bnn_error,
                             'latest_post_bnn_error': post_bnn_error})
         csvfile.flush()
+        if test_rewards.mean() == 1:
+            do_exit = True
 
         # save model
         torch.save(actor_critic, os.path.join(args.log_dir, 'model'+str(num_update)+'.pth'))
         if (args.vime or args.imle):
             import joblib
             torch.save(dynamics, os.path.join(args.log_dir, 'bnn'+str(num_update)+'.pth'))
-            joblib.dump(memory, os.path.join(args.log_dir, 'memory.pkl'))
+            joblib.dump(memory, os.path.join(args.log_dir, 'latest_memory.pkl'))
+
         if do_exit:
             envs.close()
             return

@@ -37,13 +37,11 @@ obs_shape = env.observation_space.shape
 obs_shape = (obs_shape[0] * args.num_stack, *obs_shape[1:])
 current_state = torch.zeros(1, *obs_shape)
 
-# actor_critic = model.CNNContinuousPolicySeparate(obs_shape[0], env.action_space)
 actor_critic = torch.load(args.load_path)
 print (actor_critic)
-# actor_critic.load_state_dict(torch.load(args.load_path))
-# actor_critic = torch.load(os.path.join(args.load_dir, args.env_name + ".pt"))
 actor_critic.eval()
-
+actor_critic = actor_critic.cpu()
+actor_critic.obs_filter.cpu()
 def update_current_state(state):
     shape_dim0 = env.observation_space.shape[0]
     state = torch.from_numpy(state).float()

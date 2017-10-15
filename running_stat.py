@@ -15,6 +15,14 @@ class ObsNorm(object):
         self.mean = torch.zeros(shape)
         self.std = torch.ones(shape)
 
+    def cpu(self):
+        self.count = self.count.cpu()
+        self.sum = self.sum.cpu()
+        self.sum_sqr = self.sum_sqr.cpu()
+
+        self.mean = self.mean.cpu()
+        self.std = self.std.cpu()
+
     def cuda(self):
         self.count = self.count.cuda()
         self.sum = self.sum.cuda()

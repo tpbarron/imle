@@ -154,8 +154,10 @@ class CNNContinuousPolicy(torch.nn.Module):
         return value, action_mean, action_logstd
 
 
-    def act(self, inputs):
+    def act(self, inputs, deterministic=False):
         value, action_mean, action_logstd = self(inputs)
+        if deterministic:
+            return value, action_mean
         # print ("value, actm, actlogstd:", value.size(), action_mean.size(), action_logstd.size())
         action_std = action_logstd.exp()
         noise = Variable(torch.randn(action_std.size()))
@@ -182,15 +184,15 @@ class CNNContinuousPolicySeparate(torch.nn.Module):
 
         self.conv1_a = nn.Conv2d(num_inputs, 32, 8, stride=4)
         self.conv2_a = nn.Conv2d(32, 64, 4, stride=2)
-        self.conv3_a = nn.Conv2d(64, 32, 3, stride=1)
-        self.linear1_a = nn.Linear(32 * 7 * 7, 512)
+        # self.conv3_a = nn.Conv2d(64, 32, 3, stride=1)
+        self.linear1_a = nn.Linear(64 * 9 * 9, 512)
         self.fc_mean_a = nn.Linear(512, action_space.shape[0])
         self.a_log_std = nn.Parameter(torch.zeros(1, action_space.shape[0]))
 
         self.conv1_v = nn.Conv2d(num_inputs, 32, 8, stride=4)
         self.conv2_v = nn.Conv2d(32, 64, 4, stride=2)
-        self.conv3_v = nn.Conv2d(64, 32, 3, stride=1)
-        self.linear1_v = nn.Linear(32 * 7 * 7, 512)
+        # self.conv3_v = nn.Conv2d(64, 32, 3, stride=1)
+        self.linear1_v = nn.Linear(64 * 9 * 9, 512)
         self.critic_linear_v = nn.Linear(512, 1)
 
         self.apply(weights_init)
@@ -198,11 +200,11 @@ class CNNContinuousPolicySeparate(torch.nn.Module):
         relu_gain = nn.init.calculate_gain('relu')
         self.conv1_a.weight.data.mul_(relu_gain)
         self.conv2_a.weight.data.mul_(relu_gain)
-        self.conv3_a.weight.data.mul_(relu_gain)
+        # self.conv3_a.weight.data.mul_(relu_gain)
         self.linear1_a.weight.data.mul_(relu_gain)
         self.conv1_v.weight.data.mul_(relu_gain)
         self.conv2_v.weight.data.mul_(relu_gain)
-        self.conv3_v.weight.data.mul_(relu_gain)
+        # self.conv3_v.weight.data.mul_(relu_gain)
         self.linear1_v.weight.data.mul_(relu_gain)
 
         self.train()
@@ -214,10 +216,10 @@ class CNNContinuousPolicySeparate(torch.nn.Module):
         x = self.conv2_v(x)
         x = F.relu(x)
 
-        x = self.conv3_v(x)
-        x = F.relu(x)
+        # x = self.conv3_v(x)
+        # x = F.relu(x)
 
-        x = x.view(-1, 32 * 7 * 7)
+        x = x.view(-1, 64 * 9 * 9)
         x = self.linear1_v(x)
         return x
 
@@ -228,10 +230,11 @@ class CNNContinuousPolicySeparate(torch.nn.Module):
         x = self.conv2_v(x)
         x = F.relu(x)
 
-        x = self.conv3_v(x)
-        x = F.relu(x)
-
-        x = x.view(-1, 32 * 7 * 7)
+        # x = self.conv3_v(x)
+        # x = F.relu(x)
+        # print (x.size())
+        # input("")
+        x = x.view(-1, 64 * 9 * 9)
         x = self.linear1_v(x)
         x = F.relu(x)
 
@@ -244,10 +247,10 @@ class CNNContinuousPolicySeparate(torch.nn.Module):
         x = self.conv2_a(x)
         x = F.relu(x)
 
-        x = self.conv3_a(x)
-        x = F.relu(x)
+        # x = self.conv3_a(x)
+        # x = F.relu(x)
 
-        x = x.view(-1, 32 * 7 * 7)
+        x = x.view(-1, 64 * 9 * 9)
         x = self.linear1_a(x)
         x = F.relu(x)
 
@@ -258,8 +261,10 @@ class CNNContinuousPolicySeparate(torch.nn.Module):
 
         return value, action_mean, action_logstd
 
-    def act(self, inputs):
+    def act(self, inputs, deterministic=False):
         value, action_mean, action_logstd = self(inputs)
+        if deterministic:
+            return value, action_mean
         # print ("value, actm, actlogstd:", value.size(), action_mean.size(), action_logstd.size())
         action_std = action_logstd.exp()
         noise = Variable(torch.randn(action_std.size()))
@@ -296,12 +301,12 @@ class MLPPolicy(torch.nn.Module):
         self.action_space = action_space
 
         self.a_fc1 = nn.Linear(num_inputs, 64)
-        self.a_fc2 = nn.Linear(64, 64)
-        self.a_fc_mean = nn.Linear(64, action_space.shape[0]) #, bias=False)
+        # self.a_fc2 = nn.Linear(64, 64)
+        self.a_fc_mean = nn.Linear(64, action_space.shape[0])
         self.a_log_std = nn.Parameter(torch.zeros(1, action_space.shape[0]))
 
         self.v_fc1 = nn.Linear(num_inputs, 64)
-        self.v_fc2 = nn.Linear(64, 64)
+        # self.v_fc2 = nn.Linear(64, 64)
         self.v_fc3 = nn.Linear(64, 1)
 
         self.apply(weights_init_mlp)
@@ -326,7 +331,7 @@ class MLPPolicy(torch.nn.Module):
         x = self.v_fc1(inputs)
         x = F.tanh(x)
 
-        x = self.v_fc2(x)
+        # x = self.v_fc2(x)
         return x
 
     def forward(self, inputs):
@@ -335,8 +340,8 @@ class MLPPolicy(torch.nn.Module):
         x = self.v_fc1(inputs)
         x = F.tanh(x)
 
-        x = self.v_fc2(x)
-        x = F.tanh(x)
+        # x = self.v_fc2(x)
+        # x = F.tanh(x)
 
         x = self.v_fc3(x)
         value = x
@@ -344,8 +349,8 @@ class MLPPolicy(torch.nn.Module):
         x = self.a_fc1(inputs)
         x = F.tanh(x)
 
-        x = self.a_fc2(x)
-        x = F.tanh(x)
+        # x = self.a_fc2(x)
+        # x = F.tanh(x)
 
         x = self.a_fc_mean(x)
         action_mean = x
@@ -353,9 +358,10 @@ class MLPPolicy(torch.nn.Module):
         action_logstd = self.a_log_std.expand_as(action_mean)
         return value, action_mean, action_logstd
 
-    def act(self, inputs):
+    def act(self, inputs, deterministic=False):
         value, action_mean, action_logstd = self(inputs)
-
+        if deterministic:
+            return value, action_mean
         action_std = action_logstd.exp()
 
         noise = Variable(torch.randn(action_std.size()))
