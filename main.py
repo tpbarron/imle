@@ -14,10 +14,11 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 from torch.utils.data.sampler import BatchSampler, SubsetRandomSampler
 torch.set_default_tensor_type('torch.FloatTensor')
-
+from logger import Logger
 # ppo imports
 from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 from envs import make_env
+from eval import run_eval_episodes
 from model import *
 from storage import RolloutStorage
 
@@ -35,9 +36,9 @@ parser.add_argument('--render', action='store_true', help='Render env observatio
 parser.add_argument('--vime', action='store_true', help='Do VIME update')
 parser.add_argument('--imle', action='store_true', help='Do IMLE update')
 parser.add_argument('--shared-actor-critic', action='store_true', help='Whether to share params between pol and val in network')
-# parser.add_argument('--max-num-updates', type=int, default=1000, help='max num update steps to run')
+
 # PPO args
-parser.add_argument('--lr', type=float, default=7e-4, help='learning rate (default: 7e-4)')
+parser.add_argument('--lr', type=float, default=3e-4, help='learning rate (default: 7e-4)')
 parser.add_argument('--eps', type=float, default=1e-5, help='RMSprop optimizer epsilon (default: 1e-5)')
 parser.add_argument('--alpha', type=float, default=0.99, help='RMSprop optimizer apha (default: 0.99)')
 parser.add_argument('--gamma', type=float, default=0.99, help='discount factor for rewards (default: 0.99)')
@@ -79,31 +80,13 @@ os.makedirs(args.log_dir, exist_ok=True)
 
 assert not (args.vime and args.imle), "Cannot do both VIME and IMLE"
 
-# save args for reference
-joblib.dump(args, os.path.join(args.log_dir, 'args_snapshot.pkl'))
+# some bookkeeping
+log = Logger(args)
+log.save_args()
+log.create_csv_log()
 
-# setup csv logging
-csvfile = open(os.path.join(args.log_dir, 'data.csv'), 'w')
-fields = ['updates',
-          'frames',
-          'mean_reward',
-          'median_reward',
-          'min_reward',
-          'max_reward',
-          'pol_entropy',
-          'value_loss',
-          'policy_loss',
-          'raw_kls',
-          'scaled_kls',
-          'bonuses',
-          'replay_size',
-          'latest_pre_bnn_error',
-          'latest_post_bnn_error']
-csvwriter = csv.DictWriter(csvfile, fieldnames=fields)
-csvwriter.writeheader()
-csvfile.flush()
-
-# NOTE: in case someone is searching, this wrapper will also reset the envs when done
+# NOTE: in case someone is searching as I was, this wrapper will also reset the
+# envs as each one finishes done
 envs = SubprocVecEnv([
     make_env(args.env_name, args.seed, i, args.log_dir)
     for i in range(args.num_processes)
@@ -111,21 +94,27 @@ envs = SubprocVecEnv([
 torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 
+# if act discrete and obssize > 1 then discrete pixels
+# if act cont and obs > 1 then cont pixels
+# if act
+
 obs_shape = envs.observation_space.shape
+action_shape = 1
+
+# determine action shape
+is_continuous = None
 if envs.action_space.__class__.__name__ == 'Discrete':
-    obs_shape = (obs_shape[0] * args.num_stack, *obs_shape[1:])
-    actor_critic = CNNPolicy(obs_shape[0], envs.action_space)
+    is_continuous = False
     action_shape = 1
 else:
-    if len(obs_shape) > 1:
-        obs_shape = (obs_shape[0] * args.num_stack, *obs_shape[1:])
-        if args.shared_actor_critic:
-            actor_critic = CNNContinuousPolicy(obs_shape[0], envs.action_space)
-        else:
-            actor_critic = CNNContinuousPolicySeparate(obs_shape[0], envs.action_space)
-    else:
-        actor_critic = MLPPolicy(obs_shape[0], envs.action_space)
+    is_continuous = True
     action_shape = envs.action_space.shape[0]
+assert(is_continuous is not None)
+# determine observation shape
+if len(obs_shape) > 1: # then assume images and add frame stack
+    obs_shape = (obs_shape[0] * args.num_stack, *obs_shape[1:])
+
+actor_critic = make_actor_critic(obs_shape, envs.action_space, args.shared_actor_critic, is_continuous)
 
 if args.vime:
     num_inputs = envs.observation_space.shape[0]
@@ -134,7 +123,7 @@ if args.vime:
 elif args.imle:
     num_inputs = envs.observation_space.shape[0]
     if len(obs_shape) > 1:
-        num_model_inputs = 512 # TODO: FIXME so no automatically finds encoded shape from model
+        num_model_inputs = 64 # TODO: FIXME so no automatically finds encoded shape from model
     else:
         num_model_inputs = 64
     num_actions = envs.action_space.shape[0]
@@ -155,6 +144,10 @@ if args.cuda:
 
 old_model = copy.deepcopy(actor_critic)
 optimizer = optim.Adam(actor_critic.parameters(), args.lr, eps=args.eps)
+
+def set_optimizer_lr(lr):
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
 
 def compute_bnn_accuracy(inputs, actions, targets, encode=False):
     acc = 0.
@@ -276,6 +269,8 @@ def ppo_update(num_updates, rollouts, final_rewards):
     if hasattr(actor_critic, 'obs_filter'):
         old_model.obs_filter = actor_critic.obs_filter
 
+    decayed_clip = args.clip_param * max(1.0 - float(num_updates * args.num_processes * args.num_steps) / args.num_frames, 0)
+
     for _ in range(args.ppo_epoch):
         sampler = BatchSampler(SubsetRandomSampler(range(args.num_processes * args.num_steps)), args.batch_size * args.num_processes, drop_last=False)
         for indices in sampler:
@@ -294,7 +289,8 @@ def ppo_update(num_updates, rollouts, final_rewards):
             ratio = torch.exp(action_log_probs - Variable(old_action_log_probs.data))
             adv_targ = Variable(advantages.view(-1, 1)[indices])
             surr1 = ratio * adv_targ
-            surr2 = torch.clamp(ratio, 1.0 - args.clip_param, 1.0 + args.clip_param) * adv_targ
+            surr2 = torch.clamp(ratio, 1.0 - decayed_clip, 1.0 + decayed_clip) * adv_targ
+            # surr2 = torch.clamp(ratio, 1.0 - args.clip_param, 1.0 + args.clip_param) * adv_targ
             action_loss = -torch.min(surr1, surr2).mean() # PPO's pessimistic surrogate (L^CLIP)
 
             value_loss = (Variable(return_batch) - values).pow(2).mean()
@@ -322,40 +318,6 @@ def ppo_update(num_updates, rollouts, final_rewards):
 
     # if num_updates % args.vis_interval == 0:
     #     win = visdom_plot(viz, win, args.log_dir, args.env_name, args.algo)
-
-
-def run_eval_episodes(n):
-    env = gym.make(args.env_name)
-    current_state = torch.zeros(1, *obs_shape)
-
-    def update_current_state(state):
-        shape_dim0 = env.observation_space.shape[0]
-        state = torch.from_numpy(state).float()
-        if args.num_stack > 1:
-            current_state[:, :-shape_dim0] = current_state[:, shape_dim0:]
-        current_state[:, -shape_dim0:] = state
-
-    if args.cuda:
-        current_state = current_state.cuda()
-
-    rewards = []
-    for i in range(n):
-        done = False
-        ep_reward = 0.
-        step = 0
-        state = env.reset()
-        update_current_state(state)
-        while not done and step < args.max_episode_steps:
-            value, action = actor_critic.act(Variable(current_state, volatile=True), deterministic=True)
-            cpu_actions = action.data.cpu().numpy()
-            # Obser reward and next state
-            state, rew, done, _ = env.step(cpu_actions[0])
-            ep_reward += rew
-            update_current_state(state)
-            step += 1
-        rewards.append(ep_reward)
-    env.close()
-    return np.array(rewards)
 
 def train():
     pre_bnn_error, post_bnn_error = -1, -1
@@ -395,6 +357,8 @@ def train():
             value, action = actor_critic.act(Variable(rollouts.states[step], volatile=True))
             # print ("val, act: ", value.size(), action.size())
             cpu_actions = action.data.cpu().numpy()
+            if isinstance(envs.action_space, gym.spaces.Box):
+                cpu_actions = np.clip(cpu_actions, envs.action_space.low, envs.action_space.high)
 
             # Obser reward and next state
             state, reward, done, info = envs.step(cpu_actions)
@@ -481,7 +445,7 @@ def train():
         do_exit, (pol_entropy, value_loss, policy_loss) = ppo_update(num_update, rollouts, final_rewards)
 
         # do bnn update if memory is large enough
-        if (args.imle or args.vime) and memory.size >= args.min_replay_size and num_update % 5 == 0:
+        if (args.imle or args.vime) and memory.size >= args.min_replay_size and num_update % 1 == 0:
             print ("Updating BNN")
             obs_mean, obs_std, act_mean, act_std = memory.mean_obs_act()
             _inputss, _targetss, _actionss = [], [], []
@@ -506,27 +470,26 @@ def train():
         except:
             replay_size = 0
 
+        test_rewards = np.array([-1])
         if num_update % 5 == 0:
-            test_rewards = run_eval_episodes(10)
-        else:
-            test_rewards = np.array([-1])
+            test_rewards = run_eval_episodes(actor_critic, 10, args, obs_shape)
 
-        csvwriter.writerow({'updates': num_update,
-                            'frames': num_update * args.num_processes * args.num_steps,
-                            'mean_reward': test_rewards.mean(),
-                            'median_reward': np.median(test_rewards),
-                            'min_reward': test_rewards.min(),
-                            'max_reward': test_rewards.max(),
-                            'pol_entropy': pol_entropy,
-                            'value_loss': value_loss,
-                            'policy_loss': policy_loss,
-                            'raw_kls': raw_kls,
-                            'scaled_kls': scaled_kls,
-                            'bonuses': bonuses,
-                            'replay_size': replay_size,
-                            'latest_pre_bnn_error': pre_bnn_error,
-                            'latest_post_bnn_error': post_bnn_error})
-        csvfile.flush()
+        log.write_row({'updates': num_update,
+                    'frames': num_update * args.num_processes * args.num_steps,
+                    'mean_reward': test_rewards.mean(),
+                    'median_reward': np.median(test_rewards),
+                    'min_reward': test_rewards.min(),
+                    'max_reward': test_rewards.max(),
+                    'pol_entropy': pol_entropy,
+                    'value_loss': value_loss,
+                    'policy_loss': policy_loss,
+                    'raw_kls': raw_kls,
+                    'scaled_kls': scaled_kls,
+                    'bonuses': bonuses,
+                    'replay_size': replay_size,
+                    'latest_pre_bnn_error': pre_bnn_error,
+                    'latest_post_bnn_error': post_bnn_error})
+
         if test_rewards.mean() == 1:
             do_exit = True
 
@@ -540,6 +503,10 @@ def train():
         if do_exit:
             envs.close()
             return
+
+        frames = num_update * args.num_processes * args.num_steps
+        set_optimizer_lr(args.lr * max(1.0 - frames / args.num_frames, 0))
+
 
 if __name__ == '__main__':
     train()

@@ -182,77 +182,87 @@ class CNNContinuousPolicySeparate(torch.nn.Module):
     def __init__(self, num_inputs, action_space):
         super(CNNContinuousPolicySeparate, self).__init__()
 
-        self.conv1_a = nn.Conv2d(num_inputs, 32, 8, stride=4)
-        self.conv2_a = nn.Conv2d(32, 64, 4, stride=2)
-        # self.conv3_a = nn.Conv2d(64, 32, 3, stride=1)
-        self.linear1_a = nn.Linear(64 * 9 * 9, 512)
-        self.fc_mean_a = nn.Linear(512, action_space.shape[0])
+        self.conv_reshape = 32 * 5 * 5
+        self.conv1_a = nn.Conv2d(num_inputs, 32, 3, stride=2)
+        self.conv2_a = nn.Conv2d(32, 64, 3, stride=2)
+        self.conv3_a = nn.Conv2d(64, 32, 3, stride=1)
+        self.linear1_a = nn.Linear(self.conv_reshape, 64)
+        self.fc_mean_a = nn.Linear(64, action_space.shape[0])
         self.a_log_std = nn.Parameter(torch.zeros(1, action_space.shape[0]))
 
-        self.conv1_v = nn.Conv2d(num_inputs, 32, 8, stride=4)
-        self.conv2_v = nn.Conv2d(32, 64, 4, stride=2)
-        # self.conv3_v = nn.Conv2d(64, 32, 3, stride=1)
-        self.linear1_v = nn.Linear(64 * 9 * 9, 512)
-        self.critic_linear_v = nn.Linear(512, 1)
+        self.conv1_v = nn.Conv2d(num_inputs, 32, 3, stride=2)
+        self.conv2_v = nn.Conv2d(32, 64, 3, stride=2)
+        self.conv3_v = nn.Conv2d(64, 32, 3, stride=1)
+        self.linear1_v = nn.Linear(self.conv_reshape, 64)
+        self.enc_filter = ObsNorm((1, 64), clip=10.0)
+
+        self.critic_linear_v = nn.Linear(64, 1)
 
         self.apply(weights_init)
 
-        relu_gain = nn.init.calculate_gain('relu')
+        relu_gain = nn.init.calculate_gain('tanh')
         self.conv1_a.weight.data.mul_(relu_gain)
         self.conv2_a.weight.data.mul_(relu_gain)
-        # self.conv3_a.weight.data.mul_(relu_gain)
+        self.conv3_a.weight.data.mul_(relu_gain)
         self.linear1_a.weight.data.mul_(relu_gain)
         self.conv1_v.weight.data.mul_(relu_gain)
         self.conv2_v.weight.data.mul_(relu_gain)
-        # self.conv3_v.weight.data.mul_(relu_gain)
+        self.conv3_v.weight.data.mul_(relu_gain)
         self.linear1_v.weight.data.mul_(relu_gain)
 
         self.train()
 
     def encode(self, inputs):
         x = self.conv1_v(inputs / 255.0)
-        x = F.relu(x)
+        x = F.tanh(x)
 
         x = self.conv2_v(x)
-        x = F.relu(x)
+        x = F.tanh(x)
 
-        # x = self.conv3_v(x)
-        # x = F.relu(x)
+        x = self.conv3_v(x)
+        x = F.tanh(x)
 
-        x = x.view(-1, 64 * 9 * 9)
+        x = x.view(-1, self.conv_reshape)
         x = self.linear1_v(x)
+        x.data = self.enc_filter(x.data)
         return x
 
     def forward(self, inputs):
         x = self.conv1_v(inputs / 255.0)
-        x = F.relu(x)
+        x = F.tanh(x)
 
         x = self.conv2_v(x)
-        x = F.relu(x)
+        x = F.tanh(x)
 
-        # x = self.conv3_v(x)
-        # x = F.relu(x)
+        x = self.conv3_v(x)
+        x = F.tanh(x)
+
         # print (x.size())
         # input("")
-        x = x.view(-1, 64 * 9 * 9)
-        x = self.linear1_v(x)
-        x = F.relu(x)
 
+        x = x.view(-1, self.conv_reshape)
+        x = self.linear1_v(x)
+        for i in range(x.size()[0]):
+            self.enc_filter.update(x[i].data)
+        x = F.tanh(x)
         x = self.critic_linear_v(x)
         value = x
 
         x = self.conv1_a(inputs / 255.0)
-        x = F.relu(x)
+        x = F.tanh(x)
 
         x = self.conv2_a(x)
-        x = F.relu(x)
+        x = F.tanh(x)
 
-        # x = self.conv3_a(x)
-        # x = F.relu(x)
+        x = self.conv3_a(x)
+        x = F.tanh(x)
 
-        x = x.view(-1, 64 * 9 * 9)
+        # print (x.size())
+        # input("")
+
+        x = x.view(-1, self.conv_reshape)
         x = self.linear1_a(x)
-        x = F.relu(x)
+        x = F.tanh(x)
 
         x = self.fc_mean_a(x)
 
@@ -298,15 +308,17 @@ class MLPPolicy(torch.nn.Module):
         super(MLPPolicy, self).__init__()
 
         self.obs_filter = ObsNorm((1, num_inputs), clip=5)
+        self.enc_filter = ObsNorm((1, 64), clip=10.0)
+
         self.action_space = action_space
 
         self.a_fc1 = nn.Linear(num_inputs, 64)
-        # self.a_fc2 = nn.Linear(64, 64)
+        self.a_fc2 = nn.Linear(64, 64)
         self.a_fc_mean = nn.Linear(64, action_space.shape[0])
         self.a_log_std = nn.Parameter(torch.zeros(1, action_space.shape[0]))
 
         self.v_fc1 = nn.Linear(num_inputs, 64)
-        # self.v_fc2 = nn.Linear(64, 64)
+        self.v_fc2 = nn.Linear(64, 64)
         self.v_fc3 = nn.Linear(64, 1)
 
         self.apply(weights_init_mlp)
@@ -326,32 +338,30 @@ class MLPPolicy(torch.nn.Module):
 
     def encode(self, inputs):
         # same without last layer
-        inputs.data = self.obs_filter(inputs.data)
-
+        # inputs.data = self.obs_filter(inputs.data)
         x = self.v_fc1(inputs)
         x = F.tanh(x)
-
-        # x = self.v_fc2(x)
+        x = self.v_fc2(x)
+        x = F.tanh(x)
+        # normalize here
+        x.data = self.enc_filter(x.data)
         return x
 
     def forward(self, inputs):
+        self.obs_filter.update(inputs.data)
         inputs.data = self.obs_filter(inputs.data)
-
         x = self.v_fc1(inputs)
         x = F.tanh(x)
-
-        # x = self.v_fc2(x)
-        # x = F.tanh(x)
-
+        x = self.v_fc2(x)
+        self.enc_filter.update(x.data)
+        x = F.tanh(x)
         x = self.v_fc3(x)
         value = x
 
         x = self.a_fc1(inputs)
         x = F.tanh(x)
-
-        # x = self.a_fc2(x)
-        # x = F.tanh(x)
-
+        x = self.a_fc2(x)
+        x = F.tanh(x)
         x = self.a_fc_mean(x)
         action_mean = x
 
@@ -384,3 +394,19 @@ class MLPPolicy(torch.nn.Module):
         dist_entropy = dist_entropy.sum(-1).mean()
 
         return value, action_log_probs, dist_entropy
+
+def make_actor_critic(observation_space, action_space, is_shared, is_continuous):
+    if not is_continuous:
+        if len(observation_space) > 1: # then use conv
+            actor_critic = CNNPolicy(observation_space[0], action_space)
+        else:
+            raise NotImplementedError
+    else:
+        if len(observation_space) > 1: # use conv
+            if is_shared:
+                actor_critic = CNNContinuousPolicy(observation_space[0], action_space)
+            else:
+                actor_critic = CNNContinuousPolicySeparate(observation_space[0], action_space)
+        else:
+            actor_critic = MLPPolicy(observation_space[0], action_space)
+    return actor_critic
