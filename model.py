@@ -227,7 +227,7 @@ class CNNContinuousPolicySeparate(torch.nn.Module):
         x.data = self.enc_filter(x.data)
         return x
 
-    def forward(self, inputs):
+    def forward(self, inputs, encode_mean=False):
         x = self.conv1_v(inputs / 255.0)
         x = F.tanh(x)
 
@@ -242,8 +242,11 @@ class CNNContinuousPolicySeparate(torch.nn.Module):
 
         x = x.view(-1, self.conv_reshape)
         x = self.linear1_v(x)
-        for i in range(x.size()[0]):
-            self.enc_filter.update(x[i].data)
+
+        if encode_mean:
+            for i in range(x.size()[0]):
+                self.enc_filter.update(x[i].data)
+
         x = F.tanh(x)
         x = self.critic_linear_v(x)
         value = x
@@ -271,8 +274,12 @@ class CNNContinuousPolicySeparate(torch.nn.Module):
 
         return value, action_mean, action_logstd
 
-    def act(self, inputs, deterministic=False):
-        value, action_mean, action_logstd = self(inputs)
+    def cuda(self, **args):
+        super(CNNContinuousPolicySeparate, self).cuda(**args)
+        self.enc_filter.cuda()
+
+    def act(self, inputs, deterministic=False, encode_mean=False):
+        value, action_mean, action_logstd = self(inputs, encode_mean=encode_mean)
         if deterministic:
             return value, action_mean
         # print ("value, actm, actlogstd:", value.size(), action_mean.size(), action_logstd.size())
@@ -335,6 +342,7 @@ class MLPPolicy(torch.nn.Module):
     def cuda(self, **args):
         super(MLPPolicy, self).cuda(**args)
         self.obs_filter.cuda()
+        self.enc_filter.cuda()
 
     def encode(self, inputs):
         # same without last layer
@@ -347,13 +355,14 @@ class MLPPolicy(torch.nn.Module):
         x.data = self.enc_filter(x.data)
         return x
 
-    def forward(self, inputs):
+    def forward(self, inputs, encode_mean=False):
         self.obs_filter.update(inputs.data)
         inputs.data = self.obs_filter(inputs.data)
         x = self.v_fc1(inputs)
         x = F.tanh(x)
         x = self.v_fc2(x)
-        self.enc_filter.update(x.data)
+        if encode_mean:
+            self.enc_filter.update(x.data)
         x = F.tanh(x)
         x = self.v_fc3(x)
         value = x
@@ -368,8 +377,8 @@ class MLPPolicy(torch.nn.Module):
         action_logstd = self.a_log_std.expand_as(action_mean)
         return value, action_mean, action_logstd
 
-    def act(self, inputs, deterministic=False):
-        value, action_mean, action_logstd = self(inputs)
+    def act(self, inputs, deterministic=False, encode_mean=False):
+        value, action_mean, action_logstd = self(inputs, encode_mean=encode_mean)
         if deterministic:
             return value, action_mean
         action_std = action_logstd.exp()
