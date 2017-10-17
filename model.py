@@ -532,8 +532,8 @@ class MLPPolicy(torch.nn.Module):
         return value, action_log_probs, dist_entropy
 
 def make_actor_critic(observation_space, action_space, is_shared, is_continuous):
-    actor_critic = CNN3ContinuousPolicySeparate(observation_space[0], action_space)
-    return actor_critic
+    # actor_critic = CNN3ContinuousPolicySeparate(observation_space[0], action_space)
+    # return actor_critic
     if not is_continuous:
         if len(observation_space) > 1: # then use conv
             actor_critic = CNNPolicy(observation_space[0], action_space)
