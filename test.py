@@ -25,8 +25,10 @@ import gym_x
 # env = gym.make('ChainX-v0')
 # env = gym.make('ChainVisionX-v0')
 
+env = gym.make('InvertedPendulumSwingupVisionBullet-v0')
+
 # env = gym.make('AcrobotContinuousVisionX-v0')
-env = gym.make('MountainCarContinuousVisionX-v0')
+# env = gym.make('MountainCarContinuousVisionX-v0')
 
 env.render(mode='human')
 for i in range(10):
@@ -40,7 +42,8 @@ for i in range(10):
         obs = obs.astype(np.uint8)
         print (obs.dtype)
         from PIL import Image
-        I = Image.fromarray(obs.reshape((32, 32)))
+        dims = (32, 32)
+        I = Image.fromarray(obs.reshape(dims))
         I.show()
         input("")
         i += 1
