@@ -54,22 +54,27 @@ def update_current_state(state):
 env.render('human')
 state = env.reset()
 update_current_state(state)
+reward = 0.0
 
 while True:
     value, action = actor_critic.act(Variable(current_state, volatile=True), deterministic=True)
     cpu_actions = action.data.cpu().numpy()
+    if isinstance(env.action_space, gym.spaces.Box):
+        cpu_actions = np.clip(cpu_actions, env.action_space.low, env.action_space.high)
 
     # Obser reward and next state
-    state, _, done, _ = env.step(cpu_actions[0])
-
+    state, rew, done, _ = env.step(cpu_actions[0])
+    reward += rew
     env.render('human')
 
     if done:
+        print ("Episode reward: ", reward)
+        reward = 0.0
         state = env.reset()
         # actor_critic = torch.load(os.path.join(args.load_dir, args.env_name + ".pt"))
         # actor_critic.eval()
 
     update_current_state(state)
 
-    import time
-    time.sleep(0.1)
+    # import time
+    # time.sleep(0.1)

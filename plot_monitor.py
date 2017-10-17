@@ -24,7 +24,8 @@ def parse_file(fpath):
 
 def plot(datas):
     datas = np.array(datas)
-    xs = datas[:,0]
+    # xs = datas[:,0]
+    xs = np.arange(len(datas))
     ys = datas[:,1]
     plt.plot(xs, ys)
     plt.show()

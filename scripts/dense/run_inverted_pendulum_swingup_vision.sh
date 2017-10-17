@@ -5,7 +5,7 @@ DEFAULT_ARGS="--bnn-n-updates-per-step 5000 --num-processes 1 --num-steps 2048 -
 
 # no explr
 # high dim
-for i in 1 2 3 4 5
+for i in 2 3 4 5
 do
   EXP_PATH="baseline/inverted_pendulum_swingup_vision_dense_rew/${i}/";
   mkdir -p "${LOG_DIR}/${EXP_PATH}";
