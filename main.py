@@ -208,8 +208,8 @@ def imle_bnn_update(inputs, actions, targets):
     """ Main difference is that we first compute the feature representation
     given the states and then concat the action before training """
     print ("IMLE BNN update")
-    pre_acc = compute_bnn_accuracy(inputs, actions, targets, encode=True)
-    print ("Old BNN accuracy: ", pre_acc)
+    # pre_acc = compute_bnn_accuracy(inputs, actions, targets, encode=True)
+    # print ("Old BNN accuracy: ", pre_acc)
     for inp, act, tar in zip(inputs, actions, targets):
         inp_var = Variable(torch.from_numpy(inp))
         tar_var = Variable(torch.from_numpy(tar))
@@ -224,9 +224,9 @@ def imle_bnn_update(inputs, actions, targets):
         # print ("inp dat:", input_dat.shape)
         target_dat = tar_feat.reshape(tar_feat.shape[0], -1)
         dynamics.train(input_dat, target_dat, use_cuda=args.cuda)
-    post_acc = compute_bnn_accuracy(inputs, actions, targets, encode=True)
-    print ("New BNN accuracy: ", post_acc)
-    return pre_acc, post_acc
+    # post_acc = compute_bnn_accuracy(inputs, actions, targets, encode=True)
+    # print ("New BNN accuracy: ", post_acc)
+    return -1, -1 #pre_acc, post_acc
 
 def imle_bnn_bonus(obs, act, next_obs):
     """ Very similar to VIME. Look at infogain in feature space model """

@@ -12,10 +12,10 @@ DEFAULT_ARGS="--num-processes 4 --num-steps 256 --num-stack 4 --batch-size 64 --
 
 # no explr
 # low dim
-for i in 2
+for i in 4
 do
-  EXP_PATH="${LOG_DIR}/baseline/half_cheetah_vision_x/${i}/";
+  EXP_PATH="${LOG_DIR}/baseline/hopper_vision_x/${i}/";
   mkdir -p $EXP_PATH
-  python main.py $DEFAULT_ARGS --seed $i --log-dir $EXP_PATH --env-name "HalfCheetahVisionBulletX-v0"
-  # | tee  "${EXP_PATH}/out.log"
+  python main.py $DEFAULT_ARGS --seed $i --log-dir $EXP_PATH --env-name "HopperVisionBulletX-v0"
+  #  | tee  "${EXP_PATH}/out.log"
 done

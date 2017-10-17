@@ -24,9 +24,11 @@ import gym_x
 # env = gym.make('Walker2DVisionBulletX-v0')
 # env = gym.make('ChainX-v0')
 # env = gym.make('ChainVisionX-v0')
+# env = gym.make('HopperBulletX-v0')
+env = gym.make('HopperVisionBulletX-v0')
 
 # env = gym.make('AcrobotContinuousVisionX-v0')
-env = gym.make('MountainCarContinuousVisionX-v0')
+# env = gym.make('MountainCarContinuousVisionX-v0')
 
 env.render(mode='human')
 for i in range(10):
@@ -43,5 +45,7 @@ for i in range(10):
         I = Image.fromarray(obs.reshape((32, 32)))
         I.show()
         input("")
+        # import time
+        # time.sleep(0.1)
         i += 1
 env.close()
