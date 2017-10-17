@@ -60,6 +60,7 @@ parser.add_argument('--bnn-n-samples', type=int, default=10, help='num samples p
 parser.add_argument('--bnn-batch-size', type=int, default=32, help='batch size for bnn updates')
 parser.add_argument('--bnn-lr', type=float, default=0.0001, help='lr for bnn updates')
 parser.add_argument('--eta', type=float, default=0.0001, help='param balancing exploitation / explr')
+parser.add_argument('--eta-decay', action='store_true', default=False, help='Whether to decay eta param')
 parser.add_argument('--min-replay-size', type=int, default=500, help='Min replay size for update')
 parser.add_argument('--kl-q-len', type=int, default=10, help='Past KL queue size used for normalization')
 
@@ -207,8 +208,8 @@ def imle_bnn_update(inputs, actions, targets):
     """ Main difference is that we first compute the feature representation
     given the states and then concat the action before training """
     print ("IMLE BNN update")
-    pre_acc = compute_bnn_accuracy(inputs, actions, targets, encode=True)
-    print ("Old BNN accuracy: ", pre_acc)
+    # pre_acc = compute_bnn_accuracy(inputs, actions, targets, encode=True)
+    # print ("Old BNN accuracy: ", pre_acc)
     for inp, act, tar in zip(inputs, actions, targets):
         inp_var = Variable(torch.from_numpy(inp))
         tar_var = Variable(torch.from_numpy(tar))
@@ -223,9 +224,9 @@ def imle_bnn_update(inputs, actions, targets):
         # print ("inp dat:", input_dat.shape)
         target_dat = tar_feat.reshape(tar_feat.shape[0], -1)
         dynamics.train(input_dat, target_dat, use_cuda=args.cuda)
-    post_acc = compute_bnn_accuracy(inputs, actions, targets, encode=True)
-    print ("New BNN accuracy: ", post_acc)
-    return pre_acc, post_acc
+    # post_acc = compute_bnn_accuracy(inputs, actions, targets, encode=True)
+    # print ("New BNN accuracy: ", post_acc)
+    return -1, -1 #pre_acc, post_acc
 
 def imle_bnn_bonus(obs, act, next_obs):
     """ Very similar to VIME. Look at infogain in feature space model """
@@ -320,6 +321,7 @@ def ppo_update(num_updates, rollouts, final_rewards):
     #     win = visdom_plot(viz, win, args.log_dir, args.env_name, args.algo)
 
 def train():
+    current_eta = args.eta
     pre_bnn_error, post_bnn_error = -1, -1
     rollouts = RolloutStorage(args.num_steps, args.num_processes, obs_shape, envs.action_space)
     current_state = torch.zeros(args.num_processes, *obs_shape)
@@ -354,7 +356,7 @@ def train():
 
             # Sample actions
             # print ("data: ", rollouts.states[step].size())
-            value, action = actor_critic.act(Variable(rollouts.states[step], volatile=True))
+            value, action = actor_critic.act(Variable(rollouts.states[step], volatile=True), encode_mean=True)
             # print ("val, act: ", value.size(), action.size())
             cpu_actions = action.data.cpu().numpy()
             if isinstance(envs.action_space, gym.spaces.Box):
@@ -418,8 +420,8 @@ def train():
 
         next_value = actor_critic(Variable(rollouts.states[-1], volatile=True))[0].data
 
-        if hasattr(actor_critic, 'obs_filter'):
-            actor_critic.obs_filter.update(rollouts.states[:-1].view(-1, *obs_shape))
+        # if hasattr(actor_critic, 'obs_filter'):
+        #     actor_critic.obs_filter.update(rollouts.states[:-1].view(-1, *obs_shape))
 
         raw_kls = 0.0
         scaled_kls = 0.0
@@ -435,12 +437,12 @@ def train():
                 #     bonuses[i] = bonuses[i] / previous_mean_kl
                 rollouts.bonuses.div_(previous_mean_kl)
             scaled_kls = rollouts.bonuses.cpu().numpy().tolist()
-            bonuses = rollouts.bonuses.mul(args.eta).cpu().numpy().tolist()
+            bonuses = rollouts.bonuses.mul(current_eta).cpu().numpy().tolist()
             print ("Bonuses (no eta): (mean) ", rollouts.bonuses.mean(),
                    ", (std) ", rollouts.bonuses.std(),
-                   ", Bonuses (w/ eta): (mean) ", rollouts.bonuses.mul(args.eta).mean(),
-                   ", (std) ", rollouts.bonuses.mul(args.eta).std())
-            rollouts.apply_bonuses(args.eta)
+                   ", Bonuses (w/ eta): (mean) ", rollouts.bonuses.mul(current_eta).mean(),
+                   ", (std) ", rollouts.bonuses.mul(current_eta).std())
+            rollouts.apply_bonuses(current_eta)
         rollouts.compute_returns(next_value, args.use_gae, args.gamma, args.tau)
         do_exit, (pol_entropy, value_loss, policy_loss) = ppo_update(num_update, rollouts, final_rewards)
 
@@ -506,6 +508,8 @@ def train():
 
         frames = num_update * args.num_processes * args.num_steps
         set_optimizer_lr(args.lr * max(1.0 - frames / args.num_frames, 0))
+        if args.eta_decay:
+            current_eta = args.eta * max(1.0 - frames / args.num_frames, 0)
 
 
 if __name__ == '__main__':

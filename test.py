@@ -24,6 +24,8 @@ import gym_x
 # env = gym.make('Walker2DVisionBulletX-v0')
 # env = gym.make('ChainX-v0')
 # env = gym.make('ChainVisionX-v0')
+# env = gym.make('HopperBulletX-v0')
+env = gym.make('HopperVisionBulletX-v0')
 
 env = gym.make('InvertedPendulumSwingupVisionBullet-v0')
 
@@ -46,5 +48,7 @@ for i in range(10):
         I = Image.fromarray(obs.reshape(dims))
         I.show()
         input("")
+        # import time
+        # time.sleep(0.1)
         i += 1
 env.close()
