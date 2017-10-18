@@ -209,7 +209,7 @@ class BNN(nn.Module):
                  nonlinearity=F.relu,
                  lr=0.0001,
                  n_samples=10,
-                 likelihood_sd=0.5):
+                 likelihood_sd=5.0):
         super(BNN, self).__init__()
         self.bl1 = BayesianLayer(n_inputs, 32, nonlinearity=nonlinearity)
         self.bl2 = BayesianLayer(32, 32, nonlinearity=nonlinearity)

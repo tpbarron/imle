@@ -178,18 +178,43 @@ class CNNContinuousPolicy(torch.nn.Module):
         return value, action_log_probs, dist_entropy
 
 class CNNContinuousPolicySeparate(torch.nn.Module):
-    def __init__(self, num_inputs, action_space):
+    def __init__(self, obs_shape, action_space):
         super(CNNContinuousPolicySeparate, self).__init__()
 
-        self.actor_conv_reshape = 16 * 8 * 8
+        num_inputs = obs_shape[0]
+        d = obs_shape[-1]
+        self.extra_conv = False
+
+        if d == 32:
+            self.actor_conv_reshape = 16 * 8 * 8
+        elif d == 48:
+            self.actor_conv_reshape = 16 * 6 * 6
+        else:
+            raise Exception
+        # elif d == 64:
+        #     self.actor_conv_reshape = 16 * 16 * 16
+
         self.conv1_a = nn.Conv2d(num_inputs, 16, 4, stride=2, padding=1)
         self.conv2_a = nn.Conv2d(16, 16, 4, stride=2, padding=1)
+        if d > 32:
+            self.conv3_a = nn.Conv2d(16, 16, 4, stride=2, padding=1)
+            self.extra_conv = True
         self.linear1_a = nn.Linear(self.actor_conv_reshape, 32)
         self.fc_mean_a = nn.Linear(32, action_space.shape[0])
         self.a_log_std = nn.Parameter(torch.zeros(1, action_space.shape[0]))
 
-        self.critic_conv_reshape = 16 * 16 * 16
+        if d == 32:
+            self.critic_conv_reshape = 16 * 16 * 16
+        elif d == 48:
+            self.critic_conv_reshape = 16 * 12 * 12
+        else:
+            raise Exception
+        # elif d == 64:
+        #     self.critic_conv_reshape = 16 * 32 * 32
+
         self.conv1_v = nn.Conv2d(num_inputs, 16, 4, stride=2, padding=1)
+        if self.extra_conv:
+            self.conv2_v = nn.Conv2d(16, 16, 4, stride=2, padding=1)
         self.linear1_v = nn.Linear(self.critic_conv_reshape, 32)
         self.enc_filter = ObsNorm((1, 32), clip=10.0)
         self.critic_linear_v = nn.Linear(32, 1)
@@ -209,14 +234,27 @@ class CNNContinuousPolicySeparate(torch.nn.Module):
         x = self.conv1_v(inputs / 255.0)
         x = F.tanh(x)
 
+        if self.extra_conv:
+            x = self.conv2_v(x)
+            x = F.tanh(x)
+
         x = x.view(-1, self.critic_conv_reshape)
         x = self.linear1_v(x)
         x.data = self.enc_filter(x.data)
         return x
 
     def forward(self, inputs, encode_mean=False):
+        d = inputs.size()[-1]
+
         x = self.conv1_v(inputs / 255.0)
         x = F.tanh(x)
+
+        if self.extra_conv:
+            x = self.conv2_v(x)
+            x = F.tanh(x)
+
+        # print (x.size())
+        # input("")
 
         x = x.view(-1, self.critic_conv_reshape)
         x = self.linear1_v(x)
@@ -234,6 +272,10 @@ class CNNContinuousPolicySeparate(torch.nn.Module):
 
         x = self.conv2_a(x)
         x = F.tanh(x)
+
+        if self.extra_conv:
+            x = self.conv3_a(x)
+            x = F.tanh(x)
 
         # print (x.size())
         # input("")
@@ -643,7 +685,7 @@ def make_actor_critic(observation_space, action_space, is_shared, is_continuous)
             if is_shared:
                 actor_critic = CNNContinuousPolicy(observation_space[0], action_space)
             else:
-                actor_critic = CNNContinuousPolicySeparate(observation_space[0], action_space)
+                actor_critic = CNNContinuousPolicySeparate(observation_space, action_space)
         else:
             actor_critic = MLPPolicy(observation_space[0], action_space)
     return actor_critic

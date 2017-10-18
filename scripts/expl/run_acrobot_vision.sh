@@ -5,16 +5,24 @@ DEFAULT_ARGS="--bnn-n-updates-per-step 500 --num-processes 1 --num-steps 2048 --
 # imle vision
 for i in 1 2 3 4 5
 do
-  EXP_PATH="${LOG_DIR}/imle_baseline/acrobot_continuous_vision_x/${i}/";
-  mkdir -p $EXP_PATH;
-  python main.py $DEFAULT_ARGS --imle --seed $i --log-dir $EXP_PATH --env-name "AcrobotContinuousVisionX-v0"
-done
-
-# no explr
-# high dim
-for i in 1 2 3 4 5
-do
   EXP_PATH="${LOG_DIR}/baseline/acrobot_continuous_vision_x/${i}/";
   mkdir -p $EXP_PATH;
   python main.py $DEFAULT_ARGS --seed $i --log-dir $EXP_PATH --env-name "AcrobotContinuousVisionX-v0"
+
+  EXP_PATH="${LOG_DIR}/imle_baseline/acrobot_continuous_vision_x/${i}/";
+  mkdir -p $EXP_PATH;
+  python main.py $DEFAULT_ARGS --imle --seed $i --log-dir $EXP_PATH --env-name "AcrobotContinuousVisionX-v0"
+
+  EXP_PATH="${LOG_DIR}/imle_baseline/acrobot_continuous_vision_x_eta_decay/${i}/";
+  mkdir -p $EXP_PATH;
+  python main.py $DEFAULT_ARGS --imle --seed $i --log-dir $EXP_PATH --env-name "AcrobotContinuousVisionX-v0" --eta-decay
 done
+
+# # no explr
+# # high dim
+# for i in 1 2 3 4 5
+# do
+#   EXP_PATH="${LOG_DIR}/baseline/acrobot_continuous_vision_x/${i}/";
+#   mkdir -p $EXP_PATH;
+#   python main.py $DEFAULT_ARGS --seed $i --log-dir $EXP_PATH --env-name "AcrobotContinuousVisionX-v0"
+# done

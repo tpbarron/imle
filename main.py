@@ -226,7 +226,7 @@ def imle_bnn_update(inputs, actions, targets):
         dynamics.train(input_dat, target_dat, use_cuda=args.cuda)
     post_acc = compute_bnn_accuracy(inputs, actions, targets, encode=True)
     print ("New BNN accuracy: ", post_acc)
-    return -1, -1 #pre_acc, post_acc
+    return pre_acc, post_acc
 
 def imle_bnn_bonus(obs, act, next_obs):
     """ Very similar to VIME. Look at infogain in feature space model """
