@@ -576,9 +576,12 @@ class MLPPolicy(torch.nn.Module):
         x = self.v_fc1(inputs)
         x = F.tanh(x)
         x = self.v_fc2(x)
-        x = F.tanh(x)
+        # x = F.tanh(x)
         # normalize here
+        print (x)
         x.data = self.enc_filter(x.data)
+        print (x)
+        input("")
         return x
 
     def forward(self, inputs, encode_mean=False):

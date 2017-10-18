@@ -12,7 +12,7 @@ DEFAULT_ARGS="--bnn-n-updates-per-step 500 --num-processes 1 --num-steps 2048 --
 # done
 
 # imle
-for i in 1 2 3 4 5
+for i in 1 # 2 3 4 5
 do
   EXP_PATH="${LOG_DIR}/imle_baseline/hopper_dense_rew/${i}/";
   mkdir -p $EXP_PATH
