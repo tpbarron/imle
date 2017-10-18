@@ -265,6 +265,7 @@ def ppo_update(num_updates, rollouts, final_rewards):
     # ppo update
     advantages = rollouts.returns[:-1] - rollouts.value_preds[:-1]
     advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-5)
+    print ("advantages: ", advantages.max(), advantages.min(), advantages.mean(), advantages.std())
 
     old_model.load_state_dict(actor_critic.state_dict())
     if hasattr(actor_critic, 'obs_filter'):
@@ -386,16 +387,20 @@ def train():
             update_current_state(state)
 
             # compute bonuses
-            if args.imle or args.vime:
+            if (args.imle or args.vime) and len(memory) >= args.min_replay_size and num_update > 0:
                 bonuses = []
                 for i in range(args.num_processes):
+                    # TODO: if process is done, then give kl[-1]
                     bonus = 0
-                    if len(memory) >= args.min_replay_size:
+                    if not done[i]:
                         # compute reward bonuses
                         if args.vime:
                             bonus = vime_bnn_bonus(last_state[i], cpu_actions[i], current_state[i].cpu().numpy())
                         elif args.imle:
                             bonus = imle_bnn_bonus(last_state[i], cpu_actions[i], current_state[i].cpu().numpy())
+                    else:
+                        bonus = rollouts.bonuses[step-1, i][0] # previous timestep bonus, used if done
+                        # print (bonus)
                     bonuses.append(bonus)
                 bonuses = torch.from_numpy(np.array(bonuses)).unsqueeze(1)
             else:
