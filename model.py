@@ -189,10 +189,10 @@ class CNNContinuousPolicySeparate(torch.nn.Module):
             self.actor_conv_reshape = 16 * 8 * 8
         elif d == 48:
             self.actor_conv_reshape = 16 * 6 * 6
+        elif d == 64:
+            self.actor_conv_reshape = 16 * 8 * 8
         else:
             raise Exception
-        # elif d == 64:
-        #     self.actor_conv_reshape = 16 * 16 * 16
 
         self.conv1_a = nn.Conv2d(num_inputs, 16, 4, stride=2, padding=1)
         self.conv2_a = nn.Conv2d(16, 16, 4, stride=2, padding=1)
@@ -207,10 +207,10 @@ class CNNContinuousPolicySeparate(torch.nn.Module):
             self.critic_conv_reshape = 16 * 16 * 16
         elif d == 48:
             self.critic_conv_reshape = 16 * 12 * 12
+        elif d == 64:
+            self.critic_conv_reshape = 16 * 16 * 16
         else:
             raise Exception
-        # elif d == 64:
-        #     self.critic_conv_reshape = 16 * 32 * 32
 
         self.conv1_v = nn.Conv2d(num_inputs, 16, 4, stride=2, padding=1)
         if self.extra_conv:
