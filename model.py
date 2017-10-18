@@ -177,37 +177,30 @@ class CNNContinuousPolicy(torch.nn.Module):
         dist_entropy = dist_entropy.sum(-1).mean()
         return value, action_log_probs, dist_entropy
 
-
 class CNNContinuousPolicySeparate(torch.nn.Module):
     def __init__(self, num_inputs, action_space):
         super(CNNContinuousPolicySeparate, self).__init__()
 
-        self.conv_reshape = 16 * 3 * 3
-        self.conv1_a = nn.Conv2d(num_inputs, 32, 3, stride=2)
-        self.conv2_a = nn.Conv2d(32, 32, 3, stride=2)
-        self.conv3_a = nn.Conv2d(32, 16, 3, stride=2)
-        self.linear1_a = nn.Linear(self.conv_reshape, 64)
-        self.fc_mean_a = nn.Linear(64, action_space.shape[0])
+        self.actor_conv_reshape = 16 * 8 * 8
+        self.conv1_a = nn.Conv2d(num_inputs, 16, 4, stride=2, padding=1)
+        self.conv2_a = nn.Conv2d(16, 16, 4, stride=2, padding=1)
+        self.linear1_a = nn.Linear(self.actor_conv_reshape, 32)
+        self.fc_mean_a = nn.Linear(32, action_space.shape[0])
         self.a_log_std = nn.Parameter(torch.zeros(1, action_space.shape[0]))
 
-        self.conv1_v = nn.Conv2d(num_inputs, 32, 3, stride=2)
-        self.conv2_v = nn.Conv2d(32, 32, 3, stride=2)
-        self.conv3_v = nn.Conv2d(32, 16, 3, stride=2)
-        self.linear1_v = nn.Linear(self.conv_reshape, 64)
-        self.enc_filter = ObsNorm((1, 64), clip=10.0)
-
-        self.critic_linear_v = nn.Linear(64, 1)
+        self.critic_conv_reshape = 16 * 16 * 16
+        self.conv1_v = nn.Conv2d(num_inputs, 16, 4, stride=2, padding=1)
+        self.linear1_v = nn.Linear(self.critic_conv_reshape, 32)
+        self.enc_filter = ObsNorm((1, 32), clip=10.0)
+        self.critic_linear_v = nn.Linear(32, 1)
 
         self.apply(weights_init)
 
         relu_gain = nn.init.calculate_gain('tanh')
         self.conv1_a.weight.data.mul_(relu_gain)
         self.conv2_a.weight.data.mul_(relu_gain)
-        self.conv3_a.weight.data.mul_(relu_gain)
         self.linear1_a.weight.data.mul_(relu_gain)
         self.conv1_v.weight.data.mul_(relu_gain)
-        self.conv2_v.weight.data.mul_(relu_gain)
-        self.conv3_v.weight.data.mul_(relu_gain)
         self.linear1_v.weight.data.mul_(relu_gain)
 
         self.train()
@@ -216,13 +209,7 @@ class CNNContinuousPolicySeparate(torch.nn.Module):
         x = self.conv1_v(inputs / 255.0)
         x = F.tanh(x)
 
-        x = self.conv2_v(x)
-        x = F.tanh(x)
-
-        x = self.conv3_v(x)
-        x = F.tanh(x)
-
-        x = x.view(-1, self.conv_reshape)
+        x = x.view(-1, self.critic_conv_reshape)
         x = self.linear1_v(x)
         x.data = self.enc_filter(x.data)
         return x
@@ -231,16 +218,7 @@ class CNNContinuousPolicySeparate(torch.nn.Module):
         x = self.conv1_v(inputs / 255.0)
         x = F.tanh(x)
 
-        x = self.conv2_v(x)
-        x = F.tanh(x)
-
-        x = self.conv3_v(x)
-        x = F.tanh(x)
-
-        # print (x.size())
-        # input("")
-
-        x = x.view(-1, self.conv_reshape)
+        x = x.view(-1, self.critic_conv_reshape)
         x = self.linear1_v(x)
 
         if encode_mean:
@@ -257,13 +235,10 @@ class CNNContinuousPolicySeparate(torch.nn.Module):
         x = self.conv2_a(x)
         x = F.tanh(x)
 
-        x = self.conv3_a(x)
-        x = F.tanh(x)
-
         # print (x.size())
         # input("")
 
-        x = x.view(-1, self.conv_reshape)
+        x = x.view(-1, self.actor_conv_reshape)
         x = self.linear1_a(x)
         x = F.tanh(x)
 
@@ -300,6 +275,130 @@ class CNNContinuousPolicySeparate(torch.nn.Module):
         dist_entropy = 0.5 + math.log(2 * math.pi) + action_log_probs
         dist_entropy = dist_entropy.sum(-1).mean()
         return value, action_log_probs, dist_entropy
+
+
+# class CNNContinuousPolicySeparate(torch.nn.Module):
+#     def __init__(self, num_inputs, action_space):
+#         super(CNNContinuousPolicySeparate, self).__init__()
+#
+#         self.conv_reshape = 16 * 3 * 3
+#         self.conv1_a = nn.Conv2d(num_inputs, 32, 3, stride=2)
+#         self.conv2_a = nn.Conv2d(32, 32, 3, stride=2)
+#         self.conv3_a = nn.Conv2d(32, 16, 3, stride=2)
+#         self.linear1_a = nn.Linear(self.conv_reshape, 64)
+#         self.fc_mean_a = nn.Linear(64, action_space.shape[0])
+#         self.a_log_std = nn.Parameter(torch.zeros(1, action_space.shape[0]))
+#
+#         self.conv1_v = nn.Conv2d(num_inputs, 32, 3, stride=2)
+#         self.conv2_v = nn.Conv2d(32, 32, 3, stride=2)
+#         self.conv3_v = nn.Conv2d(32, 16, 3, stride=2)
+#         self.linear1_v = nn.Linear(self.conv_reshape, 64)
+#         self.enc_filter = ObsNorm((1, 64), clip=10.0)
+#
+#         self.critic_linear_v = nn.Linear(64, 1)
+#
+#         self.apply(weights_init)
+#
+#         relu_gain = nn.init.calculate_gain('tanh')
+#         self.conv1_a.weight.data.mul_(relu_gain)
+#         self.conv2_a.weight.data.mul_(relu_gain)
+#         self.conv3_a.weight.data.mul_(relu_gain)
+#         self.linear1_a.weight.data.mul_(relu_gain)
+#         self.conv1_v.weight.data.mul_(relu_gain)
+#         self.conv2_v.weight.data.mul_(relu_gain)
+#         self.conv3_v.weight.data.mul_(relu_gain)
+#         self.linear1_v.weight.data.mul_(relu_gain)
+#
+#         self.train()
+#
+#     def encode(self, inputs):
+#         x = self.conv1_v(inputs / 255.0)
+#         x = F.tanh(x)
+#
+#         x = self.conv2_v(x)
+#         x = F.tanh(x)
+#
+#         x = self.conv3_v(x)
+#         x = F.tanh(x)
+#
+#         x = x.view(-1, self.conv_reshape)
+#         x = self.linear1_v(x)
+#         x.data = self.enc_filter(x.data)
+#         return x
+#
+#     def forward(self, inputs, encode_mean=False):
+#         x = self.conv1_v(inputs / 255.0)
+#         x = F.tanh(x)
+#
+#         x = self.conv2_v(x)
+#         x = F.tanh(x)
+#
+#         x = self.conv3_v(x)
+#         x = F.tanh(x)
+#
+#         # print (x.size())
+#         # input("")
+#
+#         x = x.view(-1, self.conv_reshape)
+#         x = self.linear1_v(x)
+#
+#         if encode_mean:
+#             for i in range(x.size()[0]):
+#                 self.enc_filter.update(x[i].data)
+#
+#         x = F.tanh(x)
+#         x = self.critic_linear_v(x)
+#         value = x
+#
+#         x = self.conv1_a(inputs / 255.0)
+#         x = F.tanh(x)
+#
+#         x = self.conv2_a(x)
+#         x = F.tanh(x)
+#
+#         x = self.conv3_a(x)
+#         x = F.tanh(x)
+#
+#         # print (x.size())
+#         # input("")
+#
+#         x = x.view(-1, self.conv_reshape)
+#         x = self.linear1_a(x)
+#         x = F.tanh(x)
+#
+#         x = self.fc_mean_a(x)
+#
+#         action_mean = x
+#         action_logstd = self.a_log_std.expand_as(action_mean)
+#
+#         return value, action_mean, action_logstd
+#
+#     def cuda(self, **args):
+#         super(CNNContinuousPolicySeparate, self).cuda(**args)
+#         self.enc_filter.cuda()
+#
+#     def act(self, inputs, deterministic=False, encode_mean=False):
+#         value, action_mean, action_logstd = self(inputs, encode_mean=encode_mean)
+#         if deterministic:
+#             return value, action_mean
+#         # print ("value, actm, actlogstd:", value.size(), action_mean.size(), action_logstd.size())
+#         action_std = action_logstd.exp()
+#         noise = Variable(torch.randn(action_std.size()))
+#         if action_std.is_cuda:
+#             noise = noise.cuda()
+#
+#         action = action_mean + action_std * noise
+#         return value, action
+#
+#     def evaluate_actions(self, inputs, actions):
+#         assert inputs.dim() == 4, "Expect to have inputs in num_processes * num_steps x ... format"
+#         value, action_mean, action_logstd = self(inputs)
+#         action_std = action_logstd.exp()
+#         action_log_probs = -0.5 * ((actions - action_mean) / action_std).pow(2) - 0.5 * math.log(2 * math.pi) - action_logstd
+#         action_log_probs = action_log_probs.sum(1, keepdim=True)
+#         dist_entropy = 0.5 + math.log(2 * math.pi) + action_log_probs
+#         dist_entropy = dist_entropy.sum(-1).mean()
+#         return value, action_log_probs, dist_entropy
 
 class CNN3ContinuousPolicySeparate(torch.nn.Module):
     def __init__(self, num_inputs, action_space):
@@ -442,7 +541,7 @@ class MLPPolicy(torch.nn.Module):
         super(MLPPolicy, self).__init__()
 
         self.obs_filter = ObsNorm((1, num_inputs), clip=5)
-        self.enc_filter = ObsNorm((1, 64), clip=10.0)
+        self.enc_filter = ObsNorm((1, 32), clip=10.0)
 
         self.action_space = action_space
 
@@ -451,9 +550,9 @@ class MLPPolicy(torch.nn.Module):
         self.a_fc_mean = nn.Linear(64, action_space.shape[0])
         self.a_log_std = nn.Parameter(torch.zeros(1, action_space.shape[0]))
 
-        self.v_fc1 = nn.Linear(num_inputs, 64)
-        self.v_fc2 = nn.Linear(64, 64)
-        self.v_fc3 = nn.Linear(64, 1)
+        self.v_fc1 = nn.Linear(num_inputs, 32)
+        self.v_fc2 = nn.Linear(32, 32)
+        self.v_fc3 = nn.Linear(32, 1)
 
         self.apply(weights_init_mlp)
 
@@ -532,8 +631,8 @@ class MLPPolicy(torch.nn.Module):
         return value, action_log_probs, dist_entropy
 
 def make_actor_critic(observation_space, action_space, is_shared, is_continuous):
-    actor_critic = CNN3ContinuousPolicySeparate(observation_space[0], action_space)
-    return actor_critic
+    # actor_critic = CNN3ContinuousPolicySeparate(observation_space[0], action_space)
+    # return actor_critic
     if not is_continuous:
         if len(observation_space) > 1: # then use conv
             actor_critic = CNNPolicy(observation_space[0], action_space)
