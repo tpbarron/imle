@@ -4,7 +4,7 @@ from matplotlib.collections import PatchCollection
 from matplotlib.patches import Rectangle
 
 
-def plot():
+def plot(y_errors):
     # Number of data points
     n = 5
 
@@ -80,5 +80,10 @@ if __name__ == '__main__':
     header, rows = load_data("data.csv")
     cols = list(map(list, zip(*rows)))
     print (header)
-    print (cols[-2])
-    print (cols[-1])
+    pre_bnn_errors = cols[-2]
+    post_bnn_errors = cols[-1]
+    # diff between post[i], pre[i+1]
+    y_errors = [post_bnn_errors[i]-pre_bnn_errors[i+1] for i in range(len(pre_bnn_errors)-1)]
+    # a postive y error -> increased
+    # negative y error -> decreased
+    plot(y_errors)
