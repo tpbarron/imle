@@ -30,7 +30,7 @@ import gym_x
 parser = argparse.ArgumentParser()
 parser.add_argument('--env-name', type=str, default='AcrobotContinuousVisionX-v0', help='Env to train.')
 parser.add_argument('--n-iter', type=int, default=250, help='Num iters')
-parser.add_argument('--max-episode-steps', type=int, default=500, help='Max num ep steps')
+parser.add_argument('--max-episode-steps', type=int, default=10000, help='Max num ep steps')
 parser.add_argument('--max-replay-size', type=int, default=100000, help='Max num samples to store in replay memory')
 parser.add_argument('--render', action='store_true', help='Render env observations')
 parser.add_argument('--vime', action='store_true', help='Do VIME update')
@@ -72,6 +72,7 @@ parser.add_argument('--num-stack', type=int, default=1, help='number of frames t
 parser.add_argument('--num-frames', type=int, default=10e6, help='number of frames to train (default: 10e6)')
 parser.add_argument('--no-cuda', action='store_true', default=False, help='disables CUDA training')
 parser.add_argument('--no-vis', action='store_true', default=False, help='disables visdom visualization')
+parser.add_argument('--no-mean-encode', action='store_true', default=False, help='use tanh instead of mean encoding')
 
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
@@ -115,7 +116,7 @@ assert(is_continuous is not None)
 if len(obs_shape) > 1: # then assume images and add frame stack
     obs_shape = (obs_shape[0] * args.num_stack, *obs_shape[1:])
 
-actor_critic = make_actor_critic(obs_shape, envs.action_space, args.shared_actor_critic, is_continuous)
+actor_critic = make_actor_critic(obs_shape, envs.action_space, args.shared_actor_critic, is_continuous, not args.no_mean_encode)
 
 if args.vime:
     num_inputs = envs.observation_space.shape[0]
@@ -173,6 +174,7 @@ def compute_bnn_accuracy(inputs, actions, targets, encode=False):
         _out = _out.data.cpu().numpy()
         acc += np.mean(np.square(_out - target_dat.reshape(target_dat.shape[0], np.prod(target_dat.shape[1:])) ))
     acc /= len(inputs)
+    acc /= len(inputs[0]) # per dimension squared error
     return acc
 
 def vime_bnn_update(inputs, actions, targets):
@@ -226,7 +228,7 @@ def imle_bnn_update(inputs, actions, targets):
         dynamics.train(input_dat, target_dat, use_cuda=args.cuda)
     post_acc = compute_bnn_accuracy(inputs, actions, targets, encode=True)
     print ("New BNN accuracy: ", post_acc)
-    return -1, -1 #pre_acc, post_acc
+    return pre_acc, post_acc
 
 def imle_bnn_bonus(obs, act, next_obs):
     """ Very similar to VIME. Look at infogain in feature space model """
@@ -265,6 +267,7 @@ def ppo_update(num_updates, rollouts, final_rewards):
     # ppo update
     advantages = rollouts.returns[:-1] - rollouts.value_preds[:-1]
     advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-5)
+    print ("advantages: ", advantages.max(), advantages.min(), advantages.mean(), advantages.std())
 
     old_model.load_state_dict(actor_critic.state_dict())
     if hasattr(actor_critic, 'obs_filter'):
@@ -386,16 +389,20 @@ def train():
             update_current_state(state)
 
             # compute bonuses
-            if args.imle or args.vime:
+            if (args.imle or args.vime) and len(memory) >= args.min_replay_size and num_update > 0:
                 bonuses = []
                 for i in range(args.num_processes):
+                    # TODO: if process is done, then give kl[-1]
                     bonus = 0
-                    if len(memory) >= args.min_replay_size:
+                    if not done[i]:
                         # compute reward bonuses
                         if args.vime:
                             bonus = vime_bnn_bonus(last_state[i], cpu_actions[i], current_state[i].cpu().numpy())
                         elif args.imle:
                             bonus = imle_bnn_bonus(last_state[i], cpu_actions[i], current_state[i].cpu().numpy())
+                    else:
+                        bonus = rollouts.bonuses[step-1, i][0] # previous timestep bonus, used if done
+                        # print (bonus)
                     bonuses.append(bonus)
                 bonuses = torch.from_numpy(np.array(bonuses)).unsqueeze(1)
             else:
