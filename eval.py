@@ -33,7 +33,7 @@ def run_eval_episodes(actor_critic, n, args, obs_shape): # env_name, num_stack, 
         step = 0
         state = env.reset()
         update_current_state(state)
-        while not done and step < 10000: #args.max_episode_steps:
+        while not done and step < args.max_episode_steps:
             env.render()
             value, action = actor_critic.act(Variable(current_state, volatile=True), deterministic=True)
             cpu_actions = action.data.cpu().numpy()

@@ -614,11 +614,11 @@ class MLPPolicy(torch.nn.Module):
 
     def encode(self, inputs):
         # same without last layer
-        # inputs.data = self.obs_filter(inputs.data)
+        inputs.data = self.obs_filter(inputs.data)
         x = self.v_fc1(inputs)
         x = F.tanh(x)
         x = self.v_fc2(x)
-        x = F.tanh(x)
+        # x = F.tanh(x)
         # normalize here
         x.data = self.enc_filter(x.data)
         return x

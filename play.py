@@ -57,7 +57,7 @@ update_current_state(state)
 reward = 0.0
 
 while True:
-    value, action = actor_critic.act(Variable(current_state, volatile=True), deterministic=True)
+    value, action = actor_critic.act(Variable(current_state, volatile=True)) #, deterministic=True)
     cpu_actions = action.data.cpu().numpy()
     if isinstance(env.action_space, gym.spaces.Box):
         cpu_actions = np.clip(cpu_actions, env.action_space.low, env.action_space.high)

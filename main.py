@@ -89,7 +89,7 @@ log.create_csv_log()
 # NOTE: in case someone is searching as I was, this wrapper will also reset the
 # envs as each one finishes done
 envs = SubprocVecEnv([
-    make_env(args.env_name, args.seed, i, args.log_dir)
+    make_env(args.env_name, args.seed, i, args.log_dir, args.max_episode_steps)
     for i in range(args.num_processes)
 ])
 torch.manual_seed(args.seed)
