@@ -188,7 +188,8 @@ class CNNContinuousPolicySeparate(torch.nn.Module):
         if d == 32:
             self.actor_conv_reshape = 16 * 8 * 8
         elif d == 48:
-            self.actor_conv_reshape = 16 * 6 * 6
+            self.actor_conv_reshape = 16 * 12 * 12
+            # self.actor_conv_reshape = 16 * 6 * 6
         elif d == 64:
             self.actor_conv_reshape = 16 * 8 * 8
         else:
@@ -196,7 +197,7 @@ class CNNContinuousPolicySeparate(torch.nn.Module):
 
         self.conv1_a = nn.Conv2d(num_inputs, 16, 4, stride=2, padding=1)
         self.conv2_a = nn.Conv2d(16, 16, 4, stride=2, padding=1)
-        if d > 32:
+        if d > 48:
             self.conv3_a = nn.Conv2d(16, 16, 4, stride=2, padding=1)
             self.extra_conv = True
         self.linear1_a = nn.Linear(self.actor_conv_reshape, 32)
@@ -206,7 +207,8 @@ class CNNContinuousPolicySeparate(torch.nn.Module):
         if d == 32:
             self.critic_conv_reshape = 16 * 16 * 16
         elif d == 48:
-            self.critic_conv_reshape = 16 * 12 * 12
+            self.critic_conv_reshape = 16 * 24 * 24
+            # self.critic_conv_reshape = 16 * 12 * 12
         elif d == 64:
             self.critic_conv_reshape = 16 * 16 * 16
         else:
@@ -259,9 +261,9 @@ class CNNContinuousPolicySeparate(torch.nn.Module):
         x = x.view(-1, self.critic_conv_reshape)
         x = self.linear1_v(x)
 
-        if encode_mean:
-            for i in range(x.size()[0]):
-                self.enc_filter.update(x[i].data)
+        # if encode_mean:
+        #     for i in range(x.size()[0]):
+        #         self.enc_filter.update(x[i].data)
 
         x = F.tanh(x)
         x = self.critic_linear_v(x)
@@ -579,7 +581,7 @@ def weights_init_mlp(m):
             m.bias.data.fill_(0)
 
 class MLPPolicy(torch.nn.Module):
-    def __init__(self, num_inputs, action_space):
+    def __init__(self, num_inputs, action_space, do_encode_mean=True):
         super(MLPPolicy, self).__init__()
 
         self.obs_filter = ObsNorm((1, num_inputs), clip=5)
@@ -597,6 +599,8 @@ class MLPPolicy(torch.nn.Module):
         self.v_fc3 = nn.Linear(32, 1)
 
         self.apply(weights_init_mlp)
+
+        self.do_encode_mean = do_encode_mean
 
         tanh_gain = nn.init.calculate_gain('tanh')
         #self.a_fc1.weight.data.mul_(tanh_gain)
@@ -618,9 +622,11 @@ class MLPPolicy(torch.nn.Module):
         x = self.v_fc1(inputs)
         x = F.tanh(x)
         x = self.v_fc2(x)
-        # x = F.tanh(x)
-        # normalize here
-        x.data = self.enc_filter(x.data)
+        if self.do_encode_mean:
+            # normalize here
+            x.data = self.enc_filter(x.data)
+        else:
+            x = F.tanh(x)
         return x
 
     def forward(self, inputs, encode_mean=False):
@@ -672,7 +678,7 @@ class MLPPolicy(torch.nn.Module):
 
         return value, action_log_probs, dist_entropy
 
-def make_actor_critic(observation_space, action_space, is_shared, is_continuous):
+def make_actor_critic(observation_space, action_space, is_shared, is_continuous, is_encode_mean=True):
     # actor_critic = CNN3ContinuousPolicySeparate(observation_space[0], action_space)
     # return actor_critic
     if not is_continuous:
@@ -687,5 +693,6 @@ def make_actor_critic(observation_space, action_space, is_shared, is_continuous)
             else:
                 actor_critic = CNNContinuousPolicySeparate(observation_space, action_space)
         else:
-            actor_critic = MLPPolicy(observation_space[0], action_space)
+            # print (is_encode_mean)
+            actor_critic = MLPPolicy(observation_space[0], action_space, do_encode_mean=is_encode_mean)
     return actor_critic

@@ -3,51 +3,61 @@ import matplotlib.pyplot as plt
 from matplotlib.collections import PatchCollection
 from matplotlib.patches import Rectangle
 
+# def make_error_boxes(ax, xdata, ydata, xerror, yerror, facecolor='r',
+#                      edgecolor='None', alpha=1.0):
+#     # Create list for all the error patches
+#     errorboxes = []
+#
+#     # Loop over data points; create box from errors at each point
+#     for x, y, xe, ye in zip(xdata, ydata, xerror.T, yerror.T):
+#         rect = Rectangle((x - xe[0], y - ye[0]), xe.sum(), ye.sum())
+#         errorboxes.append(rect)
+#
+#     # Create patch collection with specified colour/alpha
+#     pc = PatchCollection(errorboxes, facecolor=facecolor, alpha=alpha,
+#                          edgecolor=edgecolor)
+#
+#     # Add collection to axes
+#     ax.add_collection(pc)
+#
+#     # Plot errorbars
+#     artists = ax.errorbar(xdata, ydata, xerr=xerror, yerr=yerror,
+#                           fmt='None', ecolor=facecolor, alpha=alpha, elinewidth=0)
+#
+#     return artists
 
-def plot(y_errors):
-    # Number of data points
-    n = 5
+def make_error_box(ax, x, y, w, h):
+    rect = Rectangle((x - w/2., y - abs(h)/2.), w, abs(h))
 
-    # Dummy data
-    np.random.seed(10)
-    x = np.arange(0, n, 1)
-    y = np.arange(0, n, 1)
-    # y = np.random.rand(n) * 5.
+    # Create patch collection with specified colour/alpha
+    if h <= 0:
+        fc = 'blue'
+    else:
+        fc = 'orange'
+    pc = PatchCollection([rect], facecolor=fc, alpha=1.0,
+                         edgecolor='None')
 
-    # Dummy errors (above and below)
-    xerr = np.ones((2, n))*0.1 #np.random.rand(2, n) + 0.1
-    yerr = np.ones((2, n))*0.2 #np.random.rand(2, n) + 0.2
+    # Add collection to axes
+    ax.add_collection(pc)
 
+    # Plot errorbars
+    artists = ax.errorbar([x], [y], xerr=[w/2.], yerr=[h/2.],
+                          fmt='None', ecolor=fc, alpha=1.0, elinewidth=0)
 
-    def make_error_boxes(ax, xdata, ydata, xerror, yerror, facecolor='r',
-                         edgecolor='None', alpha=1.0):
-        # Create list for all the error patches
-        errorboxes = []
+    return artists
 
-        # Loop over data points; create box from errors at each point
-        for x, y, xe, ye in zip(xdata, ydata, xerror.T, yerror.T):
-            rect = Rectangle((x - xe[0], y - ye[0]), xe.sum(), ye.sum())
-            errorboxes.append(rect)
-
-        # Create patch collection with specified colour/alpha
-        pc = PatchCollection(errorboxes, facecolor=facecolor, alpha=alpha,
-                             edgecolor=edgecolor)
-
-        # Add collection to axes
-        ax.add_collection(pc)
-
-        # Plot errorbars
-        artists = ax.errorbar(xdata, ydata, xerr=xerror, yerr=yerror,
-                              fmt='None', ecolor=facecolor, alpha=alpha, elinewidth=0)
-
-        return artists
-
-
+def plot(pre_errors, post_errors, y_errors):
     # Create figure and axes
     fig, ax = plt.subplots(1)
 
-    # Call function to create error boxes
-    _ = make_error_boxes(ax, x, y, xerr, yerr)
+    # # Call function to create error boxes
+    # _ = make_error_boxes(ax, x, y, xerr, yerr)
+
+    for i in range(len(pre_errors)-1):
+        post_error = post_errors[i]
+        pre_error = pre_errors[i+1]
+        y_err = y_errors[i]
+        make_error_box(ax, i, (pre_error+post_error)/2., 1, y_err)
 
     plt.show()
 
@@ -80,10 +90,15 @@ if __name__ == '__main__':
     header, rows = load_data("data.csv")
     cols = list(map(list, zip(*rows)))
     print (header)
-    pre_bnn_errors = cols[-2]
-    post_bnn_errors = cols[-1]
+    pre_bnn_errors = [float(x) for x in cols[-2]]
+    post_bnn_errors = [float(x) for x in cols[-1]]
+    # print ('pre: ', pre_bnn_errors)
+    # print ('post: ', post_bnn_errors)
     # diff between post[i], pre[i+1]
-    y_errors = [post_bnn_errors[i]-pre_bnn_errors[i+1] for i in range(len(pre_bnn_errors)-1)]
-    # a postive y error -> increased
-    # negative y error -> decreased
-    plot(y_errors)
+    y_errors = [pre_bnn_errors[i+1]-post_bnn_errors[i] for i in range(len(pre_bnn_errors)-1)]
+    # a postive y error -> increased error
+    # negative y error -> decreased error
+    print (pre_bnn_errors)
+    print (post_bnn_errors)
+    print (y_errors)
+    plot(pre_bnn_errors, post_bnn_errors, y_errors)

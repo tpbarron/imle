@@ -30,7 +30,7 @@ import gym_x
 parser = argparse.ArgumentParser()
 parser.add_argument('--env-name', type=str, default='AcrobotContinuousVisionX-v0', help='Env to train.')
 parser.add_argument('--n-iter', type=int, default=250, help='Num iters')
-parser.add_argument('--max-episode-steps', type=int, default=500, help='Max num ep steps')
+parser.add_argument('--max-episode-steps', type=int, default=10000, help='Max num ep steps')
 parser.add_argument('--max-replay-size', type=int, default=100000, help='Max num samples to store in replay memory')
 parser.add_argument('--render', action='store_true', help='Render env observations')
 parser.add_argument('--vime', action='store_true', help='Do VIME update')
@@ -72,6 +72,7 @@ parser.add_argument('--num-stack', type=int, default=1, help='number of frames t
 parser.add_argument('--num-frames', type=int, default=10e6, help='number of frames to train (default: 10e6)')
 parser.add_argument('--no-cuda', action='store_true', default=False, help='disables CUDA training')
 parser.add_argument('--no-vis', action='store_true', default=False, help='disables visdom visualization')
+parser.add_argument('--no-mean-encode', action='store_true', default=False, help='use tanh instead of mean encoding')
 
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
@@ -115,7 +116,7 @@ assert(is_continuous is not None)
 if len(obs_shape) > 1: # then assume images and add frame stack
     obs_shape = (obs_shape[0] * args.num_stack, *obs_shape[1:])
 
-actor_critic = make_actor_critic(obs_shape, envs.action_space, args.shared_actor_critic, is_continuous)
+actor_critic = make_actor_critic(obs_shape, envs.action_space, args.shared_actor_critic, is_continuous, not args.no_mean_encode)
 
 if args.vime:
     num_inputs = envs.observation_space.shape[0]
@@ -173,6 +174,7 @@ def compute_bnn_accuracy(inputs, actions, targets, encode=False):
         _out = _out.data.cpu().numpy()
         acc += np.mean(np.square(_out - target_dat.reshape(target_dat.shape[0], np.prod(target_dat.shape[1:])) ))
     acc /= len(inputs)
+    acc /= len(inputs[0]) # per dimension squared error
     return acc
 
 def vime_bnn_update(inputs, actions, targets):
