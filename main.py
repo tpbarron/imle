@@ -30,7 +30,7 @@ import gym_x
 parser = argparse.ArgumentParser()
 parser.add_argument('--env-name', type=str, default='AcrobotContinuousVisionX-v0', help='Env to train.')
 parser.add_argument('--n-iter', type=int, default=250, help='Num iters')
-parser.add_argument('--max-episode-steps', type=int, default=10000, help='Max num ep steps')
+parser.add_argument('--max-episode-steps', type=int, default=1000, help='Max num ep steps')
 parser.add_argument('--max-replay-size', type=int, default=100000, help='Max num samples to store in replay memory')
 parser.add_argument('--render', action='store_true', help='Render env observations')
 parser.add_argument('--vime', action='store_true', help='Do VIME update')
@@ -480,8 +480,8 @@ def train():
             replay_size = 0
 
         test_rewards = np.array([-1])
-        if num_update % 5 == 0:
-            test_rewards = run_eval_episodes(actor_critic, 10, args, obs_shape)
+        if num_update % 1 == 0:
+            test_rewards = run_eval_episodes(actor_critic, 1, args, obs_shape)
 
         log.write_row({'updates': num_update,
                     'frames': num_update * args.num_processes * args.num_steps,
@@ -499,8 +499,8 @@ def train():
                     'latest_pre_bnn_error': pre_bnn_error,
                     'latest_post_bnn_error': post_bnn_error})
 
-        if test_rewards.mean() == 1:
-            do_exit = True
+        # if test_rewards.mean() == 1:
+        #     do_exit = True
 
         # save model
         torch.save(actor_critic, os.path.join(args.log_dir, 'model'+str(num_update)+'.pth'))
