@@ -14,10 +14,23 @@ do
   mkdir -p $EXP_PATH
   tmux new-session -s vime_ant_$i -d "python main.py ${DEFAULT_ARGS} --vime --seed ${i} --log-dir ${EXP_PATH} --env-name AntBulletX-v0"
 
-  # All this to run two tasks at a time. Probably a better way but I'm not a bash expert
-  while [ tmux has-session -t ppo_ant_$i ]  || [ tmux has-session -t vime_ant_$i ]
+  while true
   do
-    sleep 1;
+    running=0;
+    if tmux has-session -t ppo_ant_$i;
+    then
+      running=1;
+      sleep 1;
+    fi
+    if tmux has-session -t vime_ant_$i;
+    then
+      running=1;
+      sleep 1;
+    fi
+    if [ $running -eq 0 ];
+    then
+      break;
+    fi
   done
 
   EXP_PATH="${LOG_DIR}/imle_baseline/ant_dense_rew_x_t1000_enc_norm/${i}/";
@@ -26,11 +39,25 @@ do
 
   EXP_PATH="${LOG_DIR}/imle_baseline/ant_dense_rew_x_t1000_enc_norm_eta_decay/${i}/";
   mkdir -p $EXP_PATH
-  tmux new-session -s vime_ant_norm_eta_decay_$i "python main.py ${DEFAULT_ARGS} --imle --seed ${i} --log-dir ${EXP_PATH} --env-name AntBulletX-v0 --eta-decay"
+  tmux new-session -s imle_ant_norm_eta_decay_$i "python main.py ${DEFAULT_ARGS} --imle --seed ${i} --log-dir ${EXP_PATH} --env-name AntBulletX-v0 --eta-decay"
 
-  while [ tmux has-session -t imle_ant_norm_$i ] || [ tmux has-session -t imle_ant_norm_eta_decay_$i ]
+  while true
   do
-    sleep 1;
+    running=0;
+    if tmux has-session -t imle_ant_norm_$i;
+    then
+      running=1;
+      sleep 1;
+    fi
+    if tmux has-session -t imle_ant_norm_eta_decay_$i;
+    then
+      running=1;
+      sleep 1;
+    fi
+    if [ $running -eq 0 ];
+    then
+      break;
+    fi
   done
 
 done
