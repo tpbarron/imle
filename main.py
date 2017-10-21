@@ -36,6 +36,7 @@ parser.add_argument('--render', action='store_true', help='Render env observatio
 parser.add_argument('--vime', action='store_true', help='Do VIME update')
 parser.add_argument('--imle', action='store_true', help='Do IMLE update')
 parser.add_argument('--shared-actor-critic', action='store_true', help='Whether to share params between pol and val in network')
+parser.add_argument('--cam-type', type=str, default=None, help='camera type for vision tasks, empty default ensures setting')
 
 # PPO args
 parser.add_argument('--lr', type=float, default=3e-4, help='learning rate (default: 7e-4)')
@@ -59,6 +60,7 @@ parser.add_argument('--bnn-n-updates-per-step', type=int, default=500, help='num
 parser.add_argument('--bnn-n-samples', type=int, default=10, help='num samples per bnn update')
 parser.add_argument('--bnn-batch-size', type=int, default=32, help='batch size for bnn updates')
 parser.add_argument('--bnn-lr', type=float, default=0.0001, help='lr for bnn updates')
+parser.add_argument('--bnn-update-interval', type=int, default=1, help='ppo update interval at which to do bnn update')
 parser.add_argument('--eta', type=float, default=0.0001, help='param balancing exploitation / explr')
 parser.add_argument('--eta-decay', action='store_true', default=False, help='Whether to decay eta param')
 parser.add_argument('--min-replay-size', type=int, default=500, help='Min replay size for update')
@@ -90,7 +92,7 @@ log.create_csv_log()
 # NOTE: in case someone is searching as I was, this wrapper will also reset the
 # envs as each one finishes done
 envs = SubprocVecEnv([
-    make_env(args.env_name, args.seed, i, args.log_dir, args.max_episode_steps)
+    make_env(args.env_name, args.seed, i, args.log_dir, args.max_episode_steps, args.cam_type)
     for i in range(args.num_processes)
 ])
 torch.manual_seed(args.seed)
@@ -454,7 +456,7 @@ def train():
         do_exit, (pol_entropy, value_loss, policy_loss) = ppo_update(num_update, rollouts, final_rewards)
 
         # do bnn update if memory is large enough
-        if (args.imle or args.vime) and memory.size >= args.min_replay_size and num_update % 1 == 0:
+        if (args.imle or args.vime) and memory.size >= args.min_replay_size and num_update % args.bnn_update_interval == 0:
             print ("Updating BNN")
             obs_mean, obs_std, act_mean, act_std = memory.mean_obs_act()
             _inputss, _targetss, _actionss = [], [], []
