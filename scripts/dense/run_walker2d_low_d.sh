@@ -15,9 +15,16 @@ do
   tmux new-session -s imle_walker_norm_eta_decay_$i -d "python main.py ${DEFAULT_ARGS} --imle --seed ${i} --log-dir ${EXP_PATH} --env-name Walker2DBulletX-v0 --eta-decay"
 
   # All this to run two tasks at a time. Probably a better way but I'm not a bash expert
-  while tmux has-session
+  while 1
   do
-    sleep 1;
+    if tmux has-session -t imle_walker_norm_${i}
+    then
+      sleep 1;
+    fi
+    if tmux has-session -t imle_walker_norm_eta_decay_${i}
+    then
+      sleep 1;
+    fi
   done
 
   EXP_PATH="${LOG_DIR}/baseline/walker2d_dense_rew_x_t1000/${i}/";
@@ -27,7 +34,8 @@ do
   EXP_PATH="${LOG_DIR}/vime_baseline/walker2d_dense_rew_x_t1000/${i}/";
   mkdir -p $EXP_PATH
   tmux new-session -s vime_walker_$i -d "python main.py ${DEFAULT_ARGS} --vime --seed ${i} --log-dir ${EXP_PATH} --env-name Walker2DBulletX-v0"
-  while tmux has-session
+
+  while [[ tmux has-session -t ppo_walker_$i ]]  || [[ tmux has-session -t vime_walker_$i ]]
   do
     sleep 1;
   done

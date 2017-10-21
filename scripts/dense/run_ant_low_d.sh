@@ -15,7 +15,7 @@ do
   tmux new-session -s vime_ant_$i -d "python main.py ${DEFAULT_ARGS} --vime --seed ${i} --log-dir ${EXP_PATH} --env-name AntBulletX-v0"
 
   # All this to run two tasks at a time. Probably a better way but I'm not a bash expert
-  while tmux has-session
+  while [ tmux has-session -t ppo_ant_$i ]  || [ tmux has-session -t vime_ant_$i ]
   do
     sleep 1;
   done
@@ -28,7 +28,7 @@ do
   mkdir -p $EXP_PATH
   tmux new-session -s vime_ant_norm_eta_decay_$i "python main.py ${DEFAULT_ARGS} --imle --seed ${i} --log-dir ${EXP_PATH} --env-name AntBulletX-v0 --eta-decay"
 
-  while tmux has-session
+  while [ tmux has-session -t imle_ant_norm_$i ] || [ tmux has-session -t imle_ant_norm_eta_decay_$i ]
   do
     sleep 1;
   done
