@@ -17,7 +17,7 @@ do
     do
       for framestack in 3 4
       do
-        for bnn_update_interval in 1 5
+        for bnn_update_interval in 5 1
         do
           if [ args_type == 'mujoco' ]
           then
