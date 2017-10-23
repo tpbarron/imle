@@ -11,7 +11,7 @@ def make_env(env_id, seed, rank, log_dir, max_episode_steps, cam_type):
     def _thunk():
         env = gym.make(env_id)
         if cam_type is not None:
-            env.unwrapped.cam_type = cam_type
+            env.cam_type = cam_type
         # NOTE: Wrapper needs to be done before Monitor, else early reset error
         env = TimeHorizonEnv(env, horizon=max_episode_steps)
         env.seed(seed + rank)
