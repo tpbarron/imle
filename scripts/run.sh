@@ -1,5 +1,5 @@
 
-LOG_DIR="/home/users/tbarron/Documents/dev/ml/data/outputs/imle/";
+LOG_DIR="/data/obs006/imle/";
 DEFAULT_ARGS="--num-processes 8 --num-steps 20 --batch-size 160"
 
 # vime baselines
