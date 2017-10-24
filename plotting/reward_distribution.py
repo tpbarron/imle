@@ -27,7 +27,7 @@ def parse_file(fpath):
 
 
 def plot(datas1, datas2):
-    n = 3000
+    n = 800
     xs = np.arange(n) #len(datas[0]))
 
     ydata2 = np.stack([data2[:,1][0:n] for data2 in datas2])
@@ -70,7 +70,7 @@ if __name__ == '__main__':
         data1.append(datas1)
 
     data2 = []
-    for i in range(1, 3):
+    for i in range(1, 2):
         datas2 = parse_file(os.path.join(args.load_path2, str(i)+'/0.monitor.json'))
         data2.append(datas2)
     plot(data1, data2)

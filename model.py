@@ -625,8 +625,9 @@ class MLPPolicy(torch.nn.Module):
         if self.do_encode_mean:
             # normalize here
             x.data = self.enc_filter(x.data)
-        else:
-            x = F.tanh(x)
+        # else:
+            # print ("!!!!Not encoding mean!!!!")
+        #     x = F.tanh(x)
         return x
 
     def forward(self, inputs, encode_mean=False):

@@ -96,15 +96,30 @@ if __name__ == '__main__':
     header, rows = load_data(args.load_path)
     cols = list(map(list, zip(*rows)))
     print (header)
-    pre_bnn_errors = [float(x) for x in cols[-2]]
-    post_bnn_errors = [float(x) for x in cols[-1]]
-    # print ('pre: ', pre_bnn_errors)
-    # print ('post: ', post_bnn_errors)
-    # diff between post[i], pre[i+1]
-    y_errors = [pre_bnn_errors[i+1]-post_bnn_errors[i] for i in range(len(pre_bnn_errors)-1)]
-    # a postive y error -> increased error
-    # negative y error -> decreased error
-    # print (pre_bnn_errors)
-    # print (post_bnn_errors)
-    # print (y_errors)
-    plot(pre_bnn_errors, post_bnn_errors, y_errors)
+    bonuses = []
+    for x in cols[-4]:
+        vals = x.split(',')
+        # print (vals)
+        for v in vals:
+            # print (v)
+            b = v.strip(' []')
+            # print (b)
+            # input("")
+            bonuses.append(float(b))
+    # bonuses = [float(x[2:-2]) for x in cols[-4]]
+    # print (bonuses)
+
+    plt.plot(np.arange(len(bonuses)), np.array(bonuses))
+    plt.show()
+
+    # post_bnn_errors = [float(x) for x in cols[-1]]
+    # # print ('pre: ', pre_bnn_errors)
+    # # print ('post: ', post_bnn_errors)
+    # # diff between post[i], pre[i+1]
+    # y_errors = [pre_bnn_errors[i+1]-post_bnn_errors[i] for i in range(len(pre_bnn_errors)-1)]
+    # # a postive y error -> increased error
+    # # negative y error -> decreased error
+    # # print (pre_bnn_errors)
+    # # print (post_bnn_errors)
+    # # print (y_errors)
+    # plot(pre_bnn_errors, post_bnn_errors, y_errors)

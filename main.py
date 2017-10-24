@@ -458,13 +458,13 @@ def train():
         # do bnn update if memory is large enough
         if (args.imle or args.vime) and memory.size >= args.min_replay_size and num_update % args.bnn_update_interval == 0:
             print ("Updating BNN")
-            obs_mean, obs_std, act_mean, act_std = memory.mean_obs_act()
+            # obs_mean, obs_std, act_mean, act_std = memory.mean_obs_act()
             _inputss, _targetss, _actionss = [], [], []
             for _ in range(args.bnn_n_updates_per_step):
                 batch = memory.sample(args.bnn_batch_size)
-                obs_data = (batch['observations'] - obs_mean) / (obs_std + 1e-8)
-                next_obs_data = (batch['next_observations'] - obs_mean) / (obs_std + 1e-8)
-                act_data = (batch['actions'] - act_mean) / (act_std + 1e-8)
+                obs_data = batch['observations'] #(batch['observations'] - obs_mean) / (obs_std + 1e-8)
+                next_obs_data = batch['next_observations'] #(batch['next_observations'] - obs_mean) / (obs_std + 1e-8)
+                act_data = batch['actions'] #(batch['actions'] - act_mean) / (act_std + 1e-8)
 
                 _inputss.append(obs_data)
                 _targetss.append(next_obs_data)
