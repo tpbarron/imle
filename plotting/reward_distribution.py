@@ -27,20 +27,7 @@ def parse_file(fpath):
 
 
 def plot(datas1, datas2):
-    n = 800
-    xs = np.arange(n) #len(datas[0]))
-
-    ydata2 = np.stack([data2[:,1][0:n] for data2 in datas2])
-    print (ydata2.shape)
-    ys2 = np.mean(ydata2, axis=0)
-    ystd2 = np.std(ydata2, axis=0)
-    print (ys2.shape)
-    # ys = datas[:,1]
-    ax = plt.gca()
-    # ax.fill_between(xs, ys2-ystd2, ys2+ystd2, facecolor='red', alpha=0.5)
-    # x_smooth = np.linspace(xs.min(), xs.max(), 100)
-    # y_smooth = spline(xs, ys, x_smooth)
-    plt.plot(xs, ys2, color='orange', alpha=0.75)
+    n = 3000
 
     # data1
     # get mean
@@ -56,7 +43,19 @@ def plot(datas1, datas2):
     # ax.fill_between(xs, ys1-ystd1, ys1+ystd1, facecolor='green', alpha=0.5)
     # x_smooth = np.linspace(xs.min(), xs.max(), 100)
     # y_smooth = spline(xs, ys, x_smooth)
-    plt.plot(xs, ys1, color='blue', alpha=0.75)
+    plt.plot(np.arange(len(ys1)), ys1, color='blue', alpha=0.75)
+
+    ydata2 = np.stack([data2[:,1][0:n] for data2 in datas2])
+    print (ydata2.shape)
+    ys2 = np.mean(ydata2, axis=0)
+    ystd2 = np.std(ydata2, axis=0)
+    print (ys2.shape)
+    # ys = datas[:,1]
+    ax = plt.gca()
+    # ax.fill_between(xs, ys2-ystd2, ys2+ystd2, facecolor='red', alpha=0.5)
+    # x_smooth = np.linspace(xs.min(), xs.max(), 100)
+    # y_smooth = spline(xs, ys, x_smooth)
+    plt.plot(np.arange(len(ys2)), ys2, color='orange', alpha=0.75)
 
     plt.show()
 
@@ -65,7 +64,7 @@ if __name__ == '__main__':
     basically load several monitor files and plot mean, variance
     """
     data1 = []
-    for i in range(1, 3):
+    for i in range(1, 2):
         datas1 = parse_file(os.path.join(args.load_path1, str(i)+'/0.monitor.json'))
         data1.append(datas1)
 
