@@ -246,9 +246,9 @@ class CNNContinuousPolicySeparate(torch.nn.Module):
         x = x.view(-1, self.critic_conv_reshape)
         x = self.linear1_v(x)
 
-        # if encode_mean:
-        #     for i in range(x.size()[0]):
-        #         self.enc_filter.update(x[i].data)
+        if encode_mean:
+            for i in range(x.size()[0]):
+                self.enc_filter.update(x[i].data)
 
         x = F.relu(x)
         x = self.critic_linear_v(x)
