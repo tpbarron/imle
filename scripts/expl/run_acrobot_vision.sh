@@ -8,11 +8,11 @@ do
 
   ENV_NAME="${LOG_DIR}/baseline/acrobot_continuous_vision_x_t1000/${i}/";
   mkdir -p $ENV_NAME;
-  python main.py $DEFAULT_ARGS --seed $i --log-dir $ENV_NAME --env-name "AcrobotContinuousVisionX-v0" &
+  xvfb-run -s \"-screen 0 1400x900x24\" python main.py $DEFAULT_ARGS --seed $i --log-dir $ENV_NAME --env-name "AcrobotContinuousVisionX-v0" &
 
   ENV_NAME="${LOG_DIR}/imle_baseline/acrobot_continuous_vision_x_t1000/${i}/";
   mkdir -p $ENV_NAME;
-  python main.py $DEFAULT_ARGS --imle --seed $i --log-dir $ENV_NAME --env-name "AcrobotContinuousVisionX-v0" &
+  xvfb-run -s \"-screen 0 1400x900x24\" python main.py $DEFAULT_ARGS --imle --seed $i --log-dir $ENV_NAME --env-name "AcrobotContinuousVisionX-v0" &
 
   wait;
 done
