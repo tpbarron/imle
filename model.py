@@ -208,7 +208,7 @@ class CNNContinuousPolicySeparate(torch.nn.Module):
 
         self.apply(weights_init)
 
-        relu_gain = nn.init.calculate_gain('tanh')
+        relu_gain = nn.init.calculate_gain('relu')
         self.conv1_a.weight.data.mul_(relu_gain)
         self.conv2_a.weight.data.mul_(relu_gain)
         self.linear1_a.weight.data.mul_(relu_gain)
@@ -219,11 +219,11 @@ class CNNContinuousPolicySeparate(torch.nn.Module):
 
     def encode(self, inputs):
         x = self.conv1_v(inputs / 255.0)
-        x = F.tanh(x)
+        x = F.relu(x)
 
         if self.extra_conv:
             x = self.conv2_v(x)
-            x = F.tanh(x)
+            x = F.relu(x)
 
         x = x.view(-1, self.critic_conv_reshape)
         x = self.linear1_v(x)
@@ -234,11 +234,11 @@ class CNNContinuousPolicySeparate(torch.nn.Module):
         d = inputs.size()[-1]
 
         x = self.conv1_v(inputs / 255.0)
-        x = F.tanh(x)
+        x = F.relu(x)
 
         if self.extra_conv:
             x = self.conv2_v(x)
-            x = F.tanh(x)
+            x = F.relu(x)
 
         # print (x.size())
         # input("")
@@ -246,30 +246,30 @@ class CNNContinuousPolicySeparate(torch.nn.Module):
         x = x.view(-1, self.critic_conv_reshape)
         x = self.linear1_v(x)
 
-        # if encode_mean:
-        #     for i in range(x.size()[0]):
-        #         self.enc_filter.update(x[i].data)
+        if encode_mean:
+            for i in range(x.size()[0]):
+                self.enc_filter.update(x[i].data)
 
-        x = F.tanh(x)
+        x = F.relu(x)
         x = self.critic_linear_v(x)
         value = x
 
         x = self.conv1_a(inputs / 255.0)
-        x = F.tanh(x)
+        x = F.relu(x)
 
         x = self.conv2_a(x)
-        x = F.tanh(x)
+        x = F.relu(x)
 
         if self.extra_conv:
             x = self.conv3_a(x)
-            x = F.tanh(x)
+            x = F.relu(x)
 
         # print (x.size())
         # input("")
 
         x = x.view(-1, self.actor_conv_reshape)
         x = self.linear1_a(x)
-        x = F.tanh(x)
+        x = F.relu(x)
 
         x = self.fc_mean_a(x)
 
