@@ -26,9 +26,9 @@ import gym_x
 # env = gym.make('ChainVisionX-v0')
 # env = gym.make('HopperBulletX-v0')
 # env = gym.make('HopperVisionBulletX-v0')
-env = gym.make('HalfCheetahVisionBulletX-v0')
+# env = gym.make('HalfCheetahVisionBulletX-v0')
 
-# env = gym.make('InvertedPendulumSwingupVisionBulletEnv-v0')
+env = gym.make('InvertedPendulumSwingupVisionBulletEnv-v0')
 
 # env = gym.make('AcrobotContinuousVisionX-v0')
 # env = gym.make('MountainCarContinuousVisionX-v0')
