@@ -426,6 +426,8 @@ def train():
 
         if do_exit:
             envs.close()
+            if args.use_bnn_process and (args.imle or args.vime):
+                p.terminate() #join()
             return
 
         frames = num_update * args.num_processes * args.num_steps
@@ -433,8 +435,6 @@ def train():
         if args.eta_decay:
             current_eta = args.eta * max(1.0 - frames / args.num_frames, 0)
 
-    if args.use_bnn_process and (args.imle or args.vime):
-        p.join()
 
 if __name__ == '__main__':
     train()
