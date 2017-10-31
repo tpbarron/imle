@@ -56,7 +56,9 @@ state = env.reset()
 update_current_state(state)
 reward = 0.0
 
-while True:
+rewards = []
+eps = 0
+while eps < 10:
     value, action = actor_critic.act(Variable(current_state, volatile=True)) #, deterministic=True)
     cpu_actions = action.data.cpu().numpy()
     if isinstance(env.action_space, gym.spaces.Box):
@@ -69,6 +71,8 @@ while True:
 
     if done:
         print ("Episode reward: ", reward)
+        eps += 1
+        rewards.append(reward)
         reward = 0.0
         state = env.reset()
         # actor_critic = torch.load(os.path.join(args.load_dir, args.env_name + ".pt"))
@@ -78,3 +82,5 @@ while True:
 
     # import time
     # time.sleep(0.1)
+
+print ("Rewards: ", rewards, sum(rewards)/float(eps))

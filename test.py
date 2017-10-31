@@ -42,13 +42,15 @@ for i in range(10):
         env.render()
         obs, rew, done, info = env.step(env.action_space.sample())
         print (obs.min(), obs.max(), obs.dtype)
-        obs = obs.astype(np.uint8)
-        print (obs.dtype)
-        from PIL import Image
-        dims = (64, 64) #32, 32)
-        I = Image.fromarray(obs.reshape(dims))
-        I.show()
-        input("")
+
+        if i == 50:
+            obs = obs.astype(np.uint8)
+            print (obs.dtype)
+            from PIL import Image
+            dims = (64, 64) #32, 32)
+            I = Image.fromarray(obs.reshape(dims))
+            I.show()
+            input("")
         # import time
         # time.sleep(0.1)
         i += 1
