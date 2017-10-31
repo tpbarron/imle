@@ -6,7 +6,7 @@ def bnn_process_f(args, replay_memory, dynamics, actor_critic):
     updates the bnn in the background
     """
     while True:
-        print ("BNN proc: ", replay_memory.size)
+        # print ("BNN proc: ", replay_memory.size)
         if (args.imle or args.vime) and replay_memory.size >= args.min_replay_size:
             print ("Updating BNN")
             # obs_mean, obs_std, act_mean, act_std = memory.mean_obs_act()
@@ -25,4 +25,4 @@ def bnn_process_f(args, replay_memory, dynamics, actor_critic):
             if args.vime:
                 pre_bnn_error, post_bnn_error = im_expl.vime_bnn_update(dynamics, _inputss, _actionss, _targetss)
             elif args.imle:
-                pre_bnn_error, post_bnn_error = im_expl.imle_bnn_update(actor_critic, dynamics, _inputss, _actionss, _targetss)
+                pre_bnn_error, post_bnn_error = im_expl.imle_bnn_update(actor_critic, dynamics, _inputss, _actionss, _targetss, use_cuda=args.cuda)

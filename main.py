@@ -103,7 +103,8 @@ envs = SubprocVecEnv([
     make_env(args.env_name, args.seed, i, args.log_dir, args.max_episode_steps, args.cam_type)
     for i in range(args.num_processes)
 ])
-torch.manual_seed(args.seed)
+# NOTE: seed breaks multiprocessing
+# torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 
 # if act discrete and obssize > 1 then discrete pixels
@@ -231,7 +232,7 @@ def train():
     rollouts = RolloutStorage(args.num_steps, args.num_processes, obs_shape, envs.action_space)
     current_state = torch.zeros(args.num_processes, *obs_shape)
 
-    if args.use_bnn_process:
+    if args.use_bnn_process and (args.imle or args.vime):
         p = mp.Process(target=bnn_process.bnn_process_f, args=(args, memory, dynamics, actor_critic))
         p.start()
 
@@ -432,7 +433,7 @@ def train():
         if args.eta_decay:
             current_eta = args.eta * max(1.0 - frames / args.num_frames, 0)
 
-    if args.use_bnn_process:
+    if args.use_bnn_process and (args.imle or args.vime):
         p.join()
 
 if __name__ == '__main__':
