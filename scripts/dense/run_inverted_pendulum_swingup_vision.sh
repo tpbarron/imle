@@ -1,4 +1,4 @@
-# LOG_DIR="/media/trevor/22c63957-b0cc-45b6-9d8f-173d9619fb73/outputs/imle/10_17_17/";
+LOG_DIR="/media/trevor/22c63957-b0cc-45b6-9d8f-173d9619fb73/outputs/imle/10_26_17/";
 # LOG_DIR="/media/Backup/trevor1_data/data/outputs/imle/10_20_17/set2/";
 # LOG_DIR="test_dir/";
 
@@ -6,7 +6,7 @@ DEFAULT_ARGS="--bnn-n-updates-per-step 500 --max-episode-steps 1000 --num-proces
 
 # no explr
 # low dim
-for i in 1 2 3
+for i in 3
 do
   EXP_PATH="${LOG_DIR}/imle_baseline/inverted_pendulum_swingup_vision_dense_rew_t1000_enc_norm/${i}/";
   mkdir -p $EXP_PATH
@@ -16,9 +16,9 @@ do
   mkdir -p $EXP_PATH
   python main.py ${DEFAULT_ARGS} --seed ${i} --log-dir ${EXP_PATH} --env-name InvertedPendulumSwingupVisionBulletEnv-v0 &
 
-  EXP_PATH="${LOG_DIR}/vime_baseline/inverted_pendulum_swingup_vision_dense_rew_x_t1000/${i}/";
-  mkdir -p $EXP_PATH
-  python main.py ${DEFAULT_ARGS} --vime --seed ${i} --log-dir ${EXP_PATH} --env-name InvertedPendulumSwingupVisionBulletEnv-v0 &
+  # EXP_PATH="${LOG_DIR}/vime_baseline/inverted_pendulum_swingup_vision_dense_rew_x_t1000/${i}/";
+  # mkdir -p $EXP_PATH
+  # python main.py ${DEFAULT_ARGS} --vime --seed ${i} --log-dir ${EXP_PATH} --env-name InvertedPendulumSwingupVisionBulletEnv-v0 &
 
-  wait;
+  # wait;
 done

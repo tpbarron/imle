@@ -48,6 +48,7 @@ def plot(datas1, datas2):
     # y_smooth = spline(xs, ys, x_smooth)
     # print (datas1[0][:,2][0:n].shape)
     xs = np.cumsum(datas1[0][:,2])
+    print (xs[-1])
     plt.plot(xs, ys1, color='blue', alpha=0.75)
     # plt.plot(np.arange(len(ys1)), ys1, color='blue', alpha=0.75)
 
@@ -73,12 +74,12 @@ if __name__ == '__main__':
     basically load several monitor files and plot mean, variance
     """
     data1 = []
-    for i in range(1, 2):
+    for i in range(3, 4):
         datas1 = parse_file(os.path.join(args.load_path1, str(i)+'/0.monitor.json'))
         data1.append(datas1)
 
     data2 = []
-    for i in range(1, 2):
+    for i in range(3, 4):
         datas2 = parse_file(os.path.join(args.load_path2, str(i)+'/0.monitor.json'))
         data2.append(datas2)
     plot(data1, data2)

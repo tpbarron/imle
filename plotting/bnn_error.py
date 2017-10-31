@@ -4,6 +4,11 @@ from matplotlib.collections import PatchCollection
 from matplotlib.patches import Rectangle
 import argparse
 
+plt.rc('font', family='serif')
+plt.rc('xtick', labelsize='medium')
+plt.rc('ytick', labelsize='medium')
+plt.rc('text', usetex=True)
+
 parser = argparse.ArgumentParser(description='RL')
 parser.add_argument('--load-path', default='./trained_models/',
                     help='directory to save agent logs (default: ./trained_models/)')
@@ -54,7 +59,10 @@ def make_error_box(ax, x, y, w, h):
 
 def plot(pre_errors, post_errors, y_errors):
     # Create figure and axes
-    fig, ax = plt.subplots(1)
+    # fig, ax = plt.subplots(1)
+
+    fig = plt.figure(figsize=(2, 2))
+    ax = fig.add_subplot(1, 1, 1)
 
     # # Call function to create error boxes
     # _ = make_error_boxes(ax, x, y, xerr, yerr)
