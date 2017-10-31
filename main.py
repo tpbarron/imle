@@ -5,10 +5,13 @@ import csv
 import copy
 import os
 import sys
+import time
 import gym
 import numpy as np
 import joblib
+
 import torch
+import torch.multiprocessing as mp
 import torch.optim as optim
 import torch.nn.functional as F
 from torch.autograd import Variable
@@ -22,8 +25,12 @@ from eval import run_eval_episodes
 from model import *
 from storage import RolloutStorage
 
-import replay_memory
+import torch_replay_memory as replay_memory
+# import replay_memory
 import bnn
+import bnn_process
+# NOTE: split im_expl and im_bonuses for multiprocessing # import im_expl
+import im_bonuses
 import pybullet_envs
 import gym_x
 
@@ -65,6 +72,7 @@ parser.add_argument('--eta', type=float, default=0.0001, help='param balancing e
 parser.add_argument('--eta-decay', action='store_true', default=False, help='Whether to decay eta param')
 parser.add_argument('--min-replay-size', type=int, default=500, help='Min replay size for update')
 parser.add_argument('--kl-q-len', type=int, default=10, help='Past KL queue size used for normalization')
+parser.add_argument('--use-bnn-process', action='store_true', default=False, help='Running BNN update concurrently in separate process')
 
 #
 parser.add_argument('--log-dir', default='/tmp/gym/', help='directory to save agent logs (default: /tmp/gym)')
@@ -141,6 +149,10 @@ if args.imle or args.vime:
     kl_mean = deque(maxlen=args.kl_q_len)
     kl_std = deque(maxlen=args.kl_q_len)
     kl_previous = deque(maxlen=args.kl_q_len)
+    if args.use_bnn_process:
+        memory.share_memory()
+        dynamics.share_memory()
+        actor_critic.share_memory()
 
 if args.cuda:
     actor_critic.cuda()
@@ -152,134 +164,6 @@ optimizer = optim.Adam(actor_critic.parameters(), args.lr, eps=args.eps)
 def set_optimizer_lr(lr):
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
-
-def compute_bnn_accuracy(inputs, actions, targets, encode=False):
-    acc = 0.
-    for inp, act, tar in zip(inputs, actions, targets):
-        if encode:
-            inp_var = Variable(torch.from_numpy(inp))
-            tar_var = Variable(torch.from_numpy(tar))
-            if args.cuda:
-                inp_var = inp_var.cuda()
-                tar_var = tar_var.cuda()
-            inp_feat = actor_critic.encode(inp_var).data.cpu().numpy()
-            # print ("Inp feat: ", inp_feat.shape)
-            tar_feat = actor_critic.encode(tar_var).data.cpu().numpy()
-            input_dat = np.hstack([inp_feat.reshape(inp_feat.shape[0], -1), act])
-            # print ("inp dat:", input_dat.shape)
-            target_dat = tar_feat.reshape(tar_feat.shape[0], -1)
-        else:
-            input_dat = np.hstack([inp.reshape(inp.shape[0], -1), act])
-            target_dat = tar.reshape(tar.shape[0], -1)
-
-        _out = dynamics.forward(Variable(torch.from_numpy(input_dat)).float())
-        _out = _out.data.cpu().numpy()
-        acc += np.mean(np.square(_out - target_dat.reshape(target_dat.shape[0], np.prod(target_dat.shape[1:])) ))
-    acc /= len(inputs)
-    acc /= len(inputs[0]) # per dimension squared error
-    return acc
-
-def vime_bnn_update(inputs, actions, targets):
-    pre_acc = compute_bnn_accuracy(inputs, actions, targets)
-    print ("Old BNN accuracy: ", pre_acc)
-    for inp, act, tar in zip(inputs, actions, targets):
-        input_dat = np.hstack([inp.reshape(inp.shape[0], -1), act])
-        target_dat = tar.reshape(tar.shape[0], -1)
-        dynamics.train(input_dat, target_dat)
-    post_acc = compute_bnn_accuracy(inputs, actions, targets)
-    print ("New BNN accuracy: ", post_acc)
-    return pre_acc, post_acc
-
-def vime_bnn_bonus(obs, act, next_obs):
-    # print ("Computing VIME bonus: ", obs.shape, act.shape, next_obs.shape)
-    obs = obs[np.newaxis,:]
-    act = act[np.newaxis,:]
-    # print ("Computing VIME bonus: ", obs.shape, act.shape, next_obs.shape)
-    inputs = np.hstack([obs, act])
-    targets = next_obs.reshape(next_obs.shape[0], -1)
-
-    # Approximate KL by 2nd order gradient, ref VIME
-    bonus = dynamics.fast_kl_div(inputs, targets)
-
-    # Simple KL method
-    # dynamics.save_old_params()
-    # bonus = dynamics.kl_given_sample(inputs, targets)
-    # bonus = bonus.data.cpu().numpy()
-    # dynamics.reset_to_old_params()
-    return bonus
-
-def imle_encoding(inputs, actions, targets):
-    inp_feats = []
-    tar_feats = []
-    for inp, act, tar in zip(inputs, actions, targets):
-        inp_var = Variable(torch.from_numpy(inp))
-        tar_var = Variable(torch.from_numpy(tar))
-        if args.cuda:
-            inp_var = inp_var.cuda()
-            tar_var = tar_var.cuda()
-
-        inp_feat = actor_critic.encode(inp_var).data.cpu().numpy()
-        # print ("Inp feat: ", inp_feat.shape)
-        tar_feat = actor_critic.encode(tar_var).data.cpu().numpy()
-        inp_feats.append(inp_feat)
-        tar_feats.append(tar_feat)
-    return inp_feats, tar_feats
-
-def imle_bnn_update(inputs, actions, targets):
-    """ Main difference is that we first compute the feature representation
-    given the states and then concat the action before training """
-    print ("IMLE BNN update")
-
-    inp_feats, tar_feats = imle_encoding(inputs, actions, targets)
-    pre_acc = compute_bnn_accuracy(inp_feats, actions, tar_feats, encode=False)
-    # pre_acc = compute_bnn_accuracy(inputs, actions, targets, encode=True)
-    print ("Old BNN accuracy: ", pre_acc)
-    for i in range(len(inp_feats)):
-        inp_feat = inp_feats[i]
-        # print ("Inp feat: ", inp_feat.shape)
-        tar_feat = tar_feats[i]
-        act = actions[i]
-        input_dat = np.hstack([inp_feat.reshape(inp_feat.shape[0], -1), act])
-        target_dat = tar_feat.reshape(tar_feat.shape[0], -1)
-        dynamics.train(input_dat, target_dat, use_cuda=args.cuda)
-
-    post_acc = compute_bnn_accuracy(inp_feats, actions, tar_feats, encode=False)
-    # post_acc = compute_bnn_accuracy(inputs, actions, targets, encode=True)
-    print ("New BNN accuracy: ", post_acc)
-    return pre_acc, post_acc
-
-def imle_bnn_bonus(obs, act, next_obs):
-    """ Very similar to VIME. Look at infogain in feature space model """
-    # print ("Computing VIME bonus: ", obs.shape, act.shape, next_obs.shape)
-    obs = obs[np.newaxis,:]
-    act = act[np.newaxis,:]
-    next_obs = next_obs[np.newaxis,:]
-
-    # unpacking var ensures gradients not passed
-    obs_input = Variable(torch.from_numpy(obs)).float()
-    next_obs_input = Variable(torch.from_numpy(next_obs)).float()
-    if args.cuda:
-        obs_input = obs_input.cuda()
-        next_obs_input = next_obs_input.cuda()
-
-    obs_feat = actor_critic.encode(obs_input).data.cpu().numpy()
-    # print ("next_obs_input: ", next_obs_input.size())
-    # input("")
-    next_obs_feat = actor_critic.encode(next_obs_input).data.cpu().numpy()
-
-    # print ("Computing VIME bonus: ", obs.shape, act.shape, next_obs.shape)
-    inputs = np.hstack([obs_feat, act])
-    targets = next_obs_feat.reshape(next_obs_feat.shape[0], -1)
-
-    # Approximate KL by 2nd order gradient, ref VIME
-    bonus = dynamics.fast_kl_div(inputs, targets)
-
-    # simple KL method
-    # dynamics.save_old_params()
-    # bonus = dynamics.kl_given_sample(inputs, targets)
-    # bonus = bonus.data.cpu().numpy()
-    # dynamics.reset_to_old_params()
-    return bonus
 
 def ppo_update(num_updates, rollouts, final_rewards):
     # ppo update
@@ -347,6 +231,10 @@ def train():
     rollouts = RolloutStorage(args.num_steps, args.num_processes, obs_shape, envs.action_space)
     current_state = torch.zeros(args.num_processes, *obs_shape)
 
+    if args.use_bnn_process:
+        p = mp.Process(target=bnn_process.bnn_process_f, args=(args, memory, dynamics, actor_critic))
+        p.start()
+
     def update_current_state(state):
         shape_dim0 = envs.observation_space.shape[0]
         state = torch.from_numpy(state).float()
@@ -374,7 +262,6 @@ def train():
 
         while step < args.num_steps:
             # episode_step += 1
-
             # Sample actions
             # print ("data: ", rollouts.states[step].size())
             value, action = actor_critic.act(Variable(rollouts.states[step], volatile=True), encode_mean=True)
@@ -415,9 +302,17 @@ def train():
                     if not done[i]:
                         # compute reward bonuses
                         if args.vime:
-                            bonus = vime_bnn_bonus(last_state[i], cpu_actions[i], current_state[i].cpu().numpy())
+                            bonus = im_bonuses.vime_bnn_bonus(dynamics,
+                                                           last_state[i],
+                                                           cpu_actions[i],
+                                                           current_state[i].cpu().numpy())
                         elif args.imle:
-                            bonus = imle_bnn_bonus(last_state[i], cpu_actions[i], current_state[i].cpu().numpy())
+                            bonus = im_bonuses.imle_bnn_bonus(actor_critic,
+                                                           dynamics,
+                                                           last_state[i],
+                                                           cpu_actions[i],
+                                                           current_state[i].cpu().numpy(),
+                                                           use_cuda=args.cuda)
                     else:
                         bonus = rollouts.bonuses[step-1, i][0] # previous timestep bonus, used if done
                         # print (bonus)
@@ -438,7 +333,7 @@ def train():
                                       action[i].data.cpu().numpy(),
                                       reward[i].cpu().numpy(),
                                       1-masks[i].cpu().numpy())
-                    # TODO:
+                    # TODO ?
                     # if 1-masks[i].numpy():
                     #     bonuses.append(bonuses[-1])
             step += 1
@@ -471,8 +366,9 @@ def train():
         rollouts.compute_returns(next_value, args.use_gae, args.gamma, args.tau)
         do_exit, (pol_entropy, value_loss, policy_loss) = ppo_update(num_update, rollouts, final_rewards)
 
+        # print ("Memory: ", memory.size)
         # do bnn update if memory is large enough
-        if (args.imle or args.vime) and memory.size >= args.min_replay_size and num_update % args.bnn_update_interval == 0:
+        if (args.imle or args.vime) and memory.size >= args.min_replay_size and num_update % args.bnn_update_interval == 0 and not args.use_bnn_process:
             print ("Updating BNN")
             # obs_mean, obs_std, act_mean, act_std = memory.mean_obs_act()
             _inputss, _targetss, _actionss = [], [], []
@@ -488,9 +384,9 @@ def train():
 
             # update bnn
             if args.vime:
-                pre_bnn_error, post_bnn_error = vime_bnn_update(_inputss, _actionss, _targetss)
+                pre_bnn_error, post_bnn_error = im_expl.vime_bnn_update(dynamics, _inputss, _actionss, _targetss)
             elif args.imle:
-                pre_bnn_error, post_bnn_error = imle_bnn_update(_inputss, _actionss, _targetss)
+                pre_bnn_error, post_bnn_error = im_expl.imle_bnn_update(actor_critic, dynamics, _inputss, _actionss, _targetss, use_cuda=args.cuda)
 
         try:
             replay_size = len(memory)
@@ -536,6 +432,8 @@ def train():
         if args.eta_decay:
             current_eta = args.eta * max(1.0 - frames / args.num_frames, 0)
 
+    if args.use_bnn_process:
+        p.join()
 
 if __name__ == '__main__':
     train()
