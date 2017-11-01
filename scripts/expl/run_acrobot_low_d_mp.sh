@@ -5,11 +5,11 @@ DEFAULT_ARGS="--bnn-n-updates-per-step 500 --max-episode-steps 1000 --num-proces
 # imle comparison
 for i in 1 2 3
 do
-  ENV_NAME="${LOG_DIR}/baseline/acrobot_continuous_x_t1000/${i}/";
-  mkdir -p $ENV_NAME;
-  python main.py $DEFAULT_ARGS --seed $i --log-dir $ENV_NAME --env-name "AcrobotContinuousX-v0" --no-cuda &
+  # ENV_NAME="${LOG_DIR}/baseline/acrobot_continuous_x_t1000/${i}/";
+  # mkdir -p $ENV_NAME;
+  # python main.py $DEFAULT_ARGS --seed $i --log-dir $ENV_NAME --env-name "AcrobotContinuousX-v0" --no-cuda &
 
-  ENV_NAME="${LOG_DIR}/imle_baseline/acrobot_continuous_x_t1000/${i}/";
+  ENV_NAME="${LOG_DIR}/imle_baseline/acrobot_continuous_x_linbnn_t1000/${i}/";
   mkdir -p $ENV_NAME;
   python main.py $DEFAULT_ARGS --imle --seed $i --log-dir $ENV_NAME --env-name "AcrobotContinuousX-v0" --no-cuda &
 
@@ -17,5 +17,5 @@ do
   # mkdir -p $ENV_NAME;
   # python main.py $DEFAULT_ARGS --vime --seed $i --log-dir $ENV_NAME --env-name "AcrobotContinuousX-v0" --no-cuda &
 
-  wait;
+  # wait;
 done
