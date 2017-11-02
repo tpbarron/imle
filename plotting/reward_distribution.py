@@ -74,12 +74,12 @@ if __name__ == '__main__':
     basically load several monitor files and plot mean, variance
     """
     data1 = []
-    for i in range(3, 4):
+    for i in range(2, 3):
         datas1 = parse_file(os.path.join(args.load_path1, str(i)+'/0.monitor.json'))
         data1.append(datas1)
 
     data2 = []
-    for i in range(3, 4):
+    for i in range(2, 3):
         datas2 = parse_file(os.path.join(args.load_path2, str(i)+'/0.monitor.json'))
         data2.append(datas2)
     plot(data1, data2)

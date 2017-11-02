@@ -5,7 +5,7 @@ DEFAULT_ARGS="--bnn-n-updates-per-step 500 --max-episode-steps 1000 --num-proces
 
 # no explr
 # low dim
-for i in 1 2 3
+for i in 2 3
 do
   EXP_PATH="${LOG_DIR}/baseline/hopper_dense_rew_x_t1000/${i}/";
   mkdir -p $EXP_PATH

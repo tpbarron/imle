@@ -28,7 +28,8 @@ import gym_x
 # env = gym.make('HopperVisionBulletX-v0')
 # env = gym.make('HalfCheetahVisionBulletX-v0')
 
-env = gym.make('InvertedPendulumSwingupVisionBulletEnv-v0')
+# env = gym.make('InvertedPendulumSwingupVisionBulletEnv-v0')
+env = gym.make('FixedInvertedPendulumSwingupBulletX-v0')
 
 # env = gym.make('AcrobotContinuousVisionX-v0')
 # env = gym.make('MountainCarContinuousVisionX-v0')
@@ -43,14 +44,14 @@ for i in range(10):
         obs, rew, done, info = env.step(env.action_space.sample())
         print (obs.min(), obs.max(), obs.dtype)
 
-        if i == 50:
-            obs = obs.astype(np.uint8)
-            print (obs.dtype)
-            from PIL import Image
-            dims = (64, 64) #32, 32)
-            I = Image.fromarray(obs.reshape(dims))
-            I.show()
-            input("")
+        # if i == 50:
+        obs = obs.astype(np.uint8)
+        print (obs.dtype)
+        from PIL import Image
+        dims = (64, 64) #32, 32)
+        I = Image.fromarray(obs.reshape(dims))
+        I.show()
+        input("")
         # import time
         # time.sleep(0.1)
         i += 1
