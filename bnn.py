@@ -209,16 +209,18 @@ class BNN(nn.Module):
                  nonlinearity=F.relu,
                  lr=0.0001,
                  n_samples=10,
-                 likelihood_sd=5.0):
+                 likelihood_sd=5.0,
+                 nonlin=False):
         super(BNN, self).__init__()
-        # self.bl1 = BayesianLayer(n_inputs, 32, nonlinearity=nonlinearity)
-        # self.bl2 = BayesianLayer(32, 32, nonlinearity=nonlinearity)
-        # self.bl3 = BayesianLayer(32, n_outputs, nonlinearity=None)
-        # self.bls = nn.ModuleList([self.bl1, self.bl2, self.bl3])
-
-        print ("Ins/outs: ", n_inputs, n_outputs)
-        self.bl = BayesianLayer(n_inputs, n_outputs, nonlinearity=None)
-        self.bls = nn.ModuleList([self.bl])
+        if nonlin:
+            self.bl1 = BayesianLayer(n_inputs, 32, nonlinearity=nonlinearity)
+            self.bl2 = BayesianLayer(32, 32, nonlinearity=nonlinearity)
+            self.bl3 = BayesianLayer(32, n_outputs, nonlinearity=None)
+            self.bls = nn.ModuleList([self.bl1, self.bl2, self.bl3])
+        else:
+            print ("Ins/outs: ", n_inputs, n_outputs)
+            self.bl = BayesianLayer(n_inputs, n_outputs, nonlinearity=None)
+            self.bls = nn.ModuleList([self.bl])
 
         self.opt = optim.Adam(self.parameters(), lr=lr)
         self.n_samples = n_samples

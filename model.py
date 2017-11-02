@@ -218,16 +218,21 @@ class CNNContinuousPolicySeparate(torch.nn.Module):
         self.train()
 
     def encode(self, inputs):
+        # print ("CNNContinuousPolicySeparate enc1")
         x = self.conv1_v(inputs / 255.0)
         x = F.relu(x)
+        # print ("CNNContinuousPolicySeparate enc2")
 
         if self.extra_conv:
             x = self.conv2_v(x)
             x = F.relu(x)
+        # print ("CNNContinuousPolicySeparate enc3")
 
         x = x.view(-1, self.critic_conv_reshape)
         x = self.linear1_v(x)
+        # print ("CNNContinuousPolicySeparate enc4")
         x.data = self.enc_filter(x.data)
+        # print ("CNNContinuousPolicySeparate enc5")
         return x
 
     def forward(self, inputs, encode_mean=False):
