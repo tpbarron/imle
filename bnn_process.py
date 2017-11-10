@@ -1,3 +1,4 @@
+import os
 import im_expl
 
 def bnn_process_f(args, replay_memory, dynamics, actor_critic):
@@ -5,6 +6,7 @@ def bnn_process_f(args, replay_memory, dynamics, actor_critic):
     A process that access the replay through shared memory and continuously
     updates the bnn in the background
     """
+    print ("BNN Process ID: ", os.getpid())
     while True:
         # print ("BNN proc: ", replay_memory.size)
         if (args.imle or args.vime) and replay_memory.size >= args.min_replay_size:

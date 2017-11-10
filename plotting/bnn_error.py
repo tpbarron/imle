@@ -5,6 +5,11 @@ from matplotlib.patches import Rectangle
 import argparse
 plt.rc('font', family='serif')
 
+plt.rc('font', family='serif')
+plt.rc('xtick', labelsize='medium')
+plt.rc('ytick', labelsize='medium')
+plt.rc('text', usetex=True)
+
 parser = argparse.ArgumentParser(description='RL')
 parser.add_argument('--load-path', default='./trained_models/',
                     help='directory to save agent logs (default: ./trained_models/)')

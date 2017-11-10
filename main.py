@@ -74,6 +74,7 @@ parser.add_argument('--eta-decay', action='store_true', default=False, help='Whe
 parser.add_argument('--min-replay-size', type=int, default=500, help='Min replay size for update')
 parser.add_argument('--kl-q-len', type=int, default=10, help='Past KL queue size used for normalization')
 parser.add_argument('--use-bnn-process', action='store_true', default=False, help='Running BNN update concurrently in separate process')
+parser.add_argument('--bnn-non-lin', action='store_true', default=False, help='use full nonlinear bnn')
 
 #
 parser.add_argument('--log-dir', default='/tmp/gym/', help='directory to save agent logs (default: /tmp/gym)')
@@ -147,7 +148,7 @@ if args.imle or args.vime:
                                   obs_shape, #nvs.observation_space.shape,
                                   envs.action_space.shape[0])
     # print (num_inputs, num_actions)
-    dynamics = bnn.BNN(num_model_inputs+num_actions, num_model_inputs, lr=args.bnn_lr, n_samples=args.bnn_n_samples)
+    dynamics = bnn.BNN(num_model_inputs+num_actions, num_model_inputs, lr=args.bnn_lr, n_samples=args.bnn_n_samples, nonlin=args.bnn_non_lin)
     kl_mean = deque(maxlen=args.kl_q_len)
     kl_std = deque(maxlen=args.kl_q_len)
     kl_previous = deque(maxlen=args.kl_q_len)
@@ -342,9 +343,6 @@ def train():
 
         next_value = actor_critic(Variable(rollouts.states[-1], volatile=True))[0].data
 
-        # if hasattr(actor_critic, 'obs_filter'):
-        #     actor_critic.obs_filter.update(rollouts.states[:-1].view(-1, *obs_shape))
-
         raw_kls = 0.0
         scaled_kls = 0.0
         bonuses = 0.0
@@ -399,6 +397,7 @@ def train():
         if num_update % 1 == 0:
             test_rewards = run_eval_episodes(actor_critic, 1, args, obs_shape)
 
+        # print ("train1")
         log.write_row({'updates': num_update,
                     'frames': num_update * args.num_processes * args.num_steps,
                     'mean_reward': test_rewards.mean(),
@@ -418,24 +417,30 @@ def train():
         # if test_rewards.mean() == 1:
         #     do_exit = True
 
+        # print ("train1b")
+
         # save model
         torch.save(actor_critic, os.path.join(args.log_dir, 'model'+str(num_update)+'.pth'))
+        # print ("train1c")
         if (args.vime or args.imle):
-            import joblib
             torch.save(dynamics, os.path.join(args.log_dir, 'bnn'+str(num_update)+'.pth'))
-            joblib.dump(memory, os.path.join(args.log_dir, 'latest_memory.pkl'))
+            # print ("train1d")
+            # joblib.dump(memory, os.path.join(args.log_dir, 'latest_memory.pkl'))
+            # print ("train1e")
 
+        # print ("train2")
         if do_exit:
             envs.close()
+            if args.use_bnn_process and (args.imle or args.vime):
+                p.terminate() #join()
             return
 
+        # print ("train3")
         frames = num_update * args.num_processes * args.num_steps
         set_optimizer_lr(args.lr * max(1.0 - frames / args.num_frames, 0))
         if args.eta_decay:
             current_eta = args.eta * max(1.0 - frames / args.num_frames, 0)
 
-    if args.use_bnn_process and (args.imle or args.vime):
-        p.join()
 
 if __name__ == '__main__':
     train()

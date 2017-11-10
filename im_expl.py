@@ -40,20 +40,30 @@ def vime_bnn_update(dynamics, inputs, actions, targets):
     return pre_acc, post_acc
 
 def imle_encoding(actor_critic, inputs, actions, targets, use_cuda=False):
+    # print ("imle encoding...")
     inp_feats = []
     tar_feats = []
     for inp, act, tar in zip(inputs, actions, targets):
+        # print ("imleenc1")
         inp_var = Variable(torch.from_numpy(inp))
         tar_var = Variable(torch.from_numpy(tar))
+        # print ("imleenc2")
         if use_cuda:
             inp_var = inp_var.cuda()
             tar_var = tar_var.cuda()
+        # print ("imleenc3")
 
+        # print (inp_var)
+        # print (actor_critic)
         inp_feat = actor_critic.encode(inp_var).data.cpu().numpy()
+        # print ("imleenc4")
         # print ("Inp feat: ", inp_feat.shape)
         tar_feat = actor_critic.encode(tar_var).data.cpu().numpy()
+        # print ("imleenc5")
         inp_feats.append(inp_feat)
         tar_feats.append(tar_feat)
+        # print ("imleenc6")
+
     return inp_feats, tar_feats
 
 def imle_bnn_update(actor_critic, dynamics, inputs, actions, targets, use_cuda=False):
@@ -62,8 +72,9 @@ def imle_bnn_update(actor_critic, dynamics, inputs, actions, targets, use_cuda=F
     print ("IMLE BNN update")
 
     inp_feats, tar_feats = imle_encoding(actor_critic, inputs, actions, targets, use_cuda=use_cuda)
+    # print ("Post encoding")
+    # pre_acc, post_acc = -1, -1
     pre_acc = compute_bnn_accuracy(dynamics, inp_feats, actions, tar_feats, encode=False)
-    # pre_acc = compute_bnn_accuracy(inputs, actions, targets, encode=True)
     print ("Old BNN accuracy: ", pre_acc)
     for i in range(len(inp_feats)):
         inp_feat = inp_feats[i]
@@ -75,6 +86,5 @@ def imle_bnn_update(actor_critic, dynamics, inputs, actions, targets, use_cuda=F
         dynamics.train(input_dat, target_dat, use_cuda=use_cuda)
 
     post_acc = compute_bnn_accuracy(dynamics, inp_feats, actions, tar_feats, encode=False)
-    # post_acc = compute_bnn_accuracy(inputs, actions, targets, encode=True)
     print ("New BNN accuracy: ", post_acc)
     return pre_acc, post_acc
