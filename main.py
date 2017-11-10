@@ -29,7 +29,8 @@ import torch_replay_memory as replay_memory
 # import replay_memory
 import bnn
 import bnn_process
-# NOTE: split im_expl and im_bonuses for multiprocessing # import im_expl
+# NOTE: split im_expl and im_bonuses for multiprocessing
+# import im_expl
 import im_bonuses
 import pybullet_envs
 import gym_x

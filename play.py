@@ -37,7 +37,7 @@ obs_shape = env.observation_space.shape
 obs_shape = (obs_shape[0] * args.num_stack, *obs_shape[1:])
 current_state = torch.zeros(1, *obs_shape)
 
-actor_critic = torch.load(args.load_path)
+actor_critic = torch.load(args.load_path, map_location=lambda storage, loc: storage)
 print (actor_critic)
 actor_critic.eval()
 actor_critic = actor_critic.cpu()

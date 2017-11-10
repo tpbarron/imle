@@ -3,10 +3,12 @@ import matplotlib.pyplot as plt
 from matplotlib.collections import PatchCollection
 from matplotlib.patches import Rectangle
 import argparse
+plt.rc('font', family='serif')
 
 parser = argparse.ArgumentParser(description='RL')
 parser.add_argument('--load-path', default='./trained_models/',
                     help='directory to save agent logs (default: ./trained_models/)')
+parser.add_argument('--name', type=str, default='name')
 args = parser.parse_args()
 
 # def make_error_boxes(ax, xdata, ydata, xerror, yerror, facecolor='r',
@@ -54,7 +56,8 @@ def make_error_box(ax, x, y, w, h):
 
 def plot(pre_errors, post_errors, y_errors):
     # Create figure and axes
-    fig, ax = plt.subplots(1)
+    fig, ax = plt.subplots(1, figsize=(4, 3))
+    # fig = plt.figure(figsize=(4, 3))
 
     # # Call function to create error boxes
     # _ = make_error_boxes(ax, x, y, xerr, yerr)
@@ -65,7 +68,15 @@ def plot(pre_errors, post_errors, y_errors):
         y_err = y_errors[i]
         make_error_box(ax, i, (pre_error+post_error)/2., 1, y_err)
 
-    plt.show()
+    ax.set_xlabel('Epoch')
+    ax.set_ylabel('Change in BNN Error')
+
+    # plt.legend()
+    plt.tight_layout()
+
+    plt.savefig('plotting/'+args.name+'_bnn_error.pdf', format='pdf')
+
+    # plt.show()
 
 
 # load csv
